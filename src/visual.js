@@ -53,7 +53,8 @@ function checksum(buf) {
 // JSON 化で Buffer は {type:'Buffer',data:[…]} に化ける。物理層 codec の責務として
 // ここでバイト忠実な cord に戻す(crypto コア=既存 9 柱は無改変のまま開ける)。
 // メモ §4「既存 9 柱に触れず物理層ラッパを足す」の実装上の帰結。
-function reviveBuffers(value) {
+// 音響担体(audio.js)も同じ復元が要るため export(将来 freshness.js へ共通化候補)。
+export function reviveBuffers(value) {
   if (value && typeof value === 'object') {
     if (value.type === 'Buffer' && Array.isArray(value.data)) return Buffer.from(value.data);
     if (Array.isArray(value)) return value.map(reviveBuffers);

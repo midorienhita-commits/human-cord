@@ -11,6 +11,7 @@
     "demo:subliminal": "node examples/smoke-subliminal-demo.js",
     "demo:tally": "node examples/tally-demo.js",
     "demo:visual": "node examples/visual-demo.js",
+    "demo:audio": "node examples/audio-demo.js",
     "test": "node --test"
   },
   "engines": {

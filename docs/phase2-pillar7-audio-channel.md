@@ -111,13 +111,17 @@ cord の本質的な証明(署名・ハッシュ・nonce・潜在 payload)を、
 
 ---
 
-## 5. Phase 2 での実装単位(将来の TODO 種)
-1. ⏳ `src/audio.js` — `renderAudio(cord) -> samples` / `extractAudio(samples) -> cord`(まず単純 FSK or 拡散の素朴版、WAV 入出力)。
-2. ⏳ freshness — `src/visual.js` の `FreshnessGuard` を共有(nonce=tip 一回性 + 鮮度窓)。共通化のため `src/freshness.js` への切り出しを検討。
-3. ⏳ リプレイ/改ざん検知 → SmokeLog 連携(`replay-or-stale` / `tamper`)。
+## 5. Phase 2 での実装単位(進捗)
+1. ✅ `src/audio.js` — `renderAudio(cord) -> Int16Array` / `extractAudio(samples) -> cord`。
+   BFSK(16kHz, 2k/4kHz, 16 sample/bit)+ 自己記述フレーム(`preamble|len|payload|sha256[4]`)
+   + WAV(PCM16/mono)入出力。実ピクセルを載せなかった視覚版と同じく、実音響=可聴 FSK に留め不可聴化は後回し。
+2. ✅ freshness — `src/visual.js` の `FreshnessGuard` を import 共有(nonce=tip 一回性 + 鮮度窓)。
+   `reviveBuffers` も visual から共有(export 追加)。`src/freshness.js` への正式切り出しは引き続き候補(§7)。
+3. ✅ リプレイ/改ざん検知 → `SmokeLog` 連携(`replay-or-stale` / `tamper`)。`receiveAudio` が束ねる。
 4. ⏳ 誤り訂正(反復 → Reed-Solomon)で再録音・圧縮耐性を上げる。
 5. ⏳ 心理音響マスキングで不可聴化(MPEG 聴覚モデル)= 物理層の最果て。依存が要るため別腹。
-6. ⏳ デモ `examples/audio-demo.js`(発行 → WAV → 復調 → リプレイ/改ざん拒否)。
+6. ✅ デモ `examples/audio-demo.js`(発行 → WAV → 復調 → 雑音/リプレイ/鮮度切れ拒否)。`npm run demo:audio`。
+7. ⏳ 実マイク同期(前置同期・タイミング復元)。現 POC は試料整列前提の往復。
 
 ## 6. 非目標(やらないこと / 誤解の予防線)
 - 「隠すだけ」の透かしは作らない(必ず鍵付き=証明可能にする)。

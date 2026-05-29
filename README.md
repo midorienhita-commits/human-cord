@@ -27,11 +27,14 @@
 | **柱6 潜在チャネル** | 発行者だけが読める裏メッセージ(Simmons subliminal channel) | `src/subliminal.js` |
 | **柱8 能動的発火応答** | 改ざん検知を append-only ハッシュチェーンログ(煙)に永久記録 | `src/smoke.js` |
 | **柱7 物理層出力(視覚チャネル)** | 媒体非依存フレーム codec + リプレイ防止(nonce 一回性 + 鮮度窓 + 煙)。実ピクセル/QR/AI 抽出は Phase 2+ アダプタ | `src/visual.js` |
+| **柱7 物理層出力(音響担体)** | FSK 音響 codec(+ WAV)+ リプレイ防止(視覚と共通)。「見えない著作権コード」= 鍵付き署名を音に乗せる。不可聴化/ECC/実マイク同期は Phase 2+ | `src/audio.js` |
 | **柱10 失敗境界の自己観測抵抗** | 改ざん検知で露出するのは「型(seq)」のみ、核は不漏 | `src/cord.js` |
 
-柱7 はプロトコル層(担体 codec + リプレイ防止)を Phase 2 最小縦切りとして実装済。
-残る物理アダプタ(実ピクセル描画・QR 格子・ECC・カメラ/AI 抽出)は依存を増やすため別腹で継続。
-設計の全体像は `docs/phase2-pillar7-visual-channel.md` を参照。
+柱7 はプロトコル層(担体 codec + リプレイ防止)を Phase 2 最小縦切りとして実装済で、
+**視覚(`src/visual.js`)と音響(`src/audio.js`)の 2 担体**に枝分かれする。リプレイ防止
+(FreshnessGuard / 煙)は両担体で共通。残る物理アダプタ(実ピクセル/QR/ECC/カメラ/AI 抽出、
+音の不可聴化=心理音響マスキング・実マイク同期)は依存を増やすため別腹で継続。
+設計は `docs/phase2-pillar7-visual-channel.md` / `docs/phase2-pillar7-audio-channel.md` を参照。
 
 ### 柱6 潜在チャネル / 柱8 発火応答
 
@@ -97,7 +100,8 @@ npm run demo:shard      # 柱4 Shamir 秘密分散(閾値未満は復元不能)
 npm run demo:fuzzy      # 柱4/7 Fuzzy Extractor(手相・虹彩から安定鍵)
 npm run demo:subliminal # 柱6 潜在チャネル + 柱8 煙(改ざんで煙が立つ)
 npm run demo:visual     # 柱7 視覚チャネル(担体 codec + リプレイ防止 + 煙)
-npm test                # 振る舞いテスト 61 本(node --test, 依存ゼロ)
+npm run demo:audio      # 柱7 音響担体(FSK→WAV、見えない著作権コード)
+npm test                # 振る舞いテスト 68 本(node --test, 依存ゼロ)
 ```
 
 ```js
@@ -168,5 +172,5 @@ rep(otherPersonsPalm, helper);      // 別の key(他人は開けない)
 
 Phase 0(設計文書化)完了 → **Phase 1(最小 POC)着手・本リポジトリ。10 柱すべてに実装が到達** → Phase 2(物理アダプタ)…
 
-実装済み柱: 1, 2, 3, 4, 5, 6, 8, 9, 10 に加え、柱7 はプロトコル層を Phase 2 最小縦切りで実装。
-柱7 の物理アダプタ(実ピクセル/QR/ECC/AI 抽出)は継続課題。
+実装済み柱: 1, 2, 3, 4, 5, 6, 8, 9, 10 に加え、柱7 はプロトコル層を Phase 2 最小縦切りで実装
+(視覚 + 音響の 2 担体)。柱7 の物理アダプタ(実ピクセル/QR/ECC/AI 抽出・音の不可聴化)は継続課題。

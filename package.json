@@ -6,6 +6,11 @@
   "license": "Apache-2.0",
   "scripts": {
     "demo": "node examples/demo.js",
+    "demo:fuzzy": "node examples/fuzzy-demo.js",
+    "demo:shard": "node examples/shard-demo.js",
+    "demo:subliminal": "node examples/smoke-subliminal-demo.js",
+    "demo:tally": "node examples/tally-demo.js",
+    "demo:visual": "node examples/visual-demo.js",
     "test": "node --test"
   },
   "engines": {

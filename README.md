@@ -26,9 +26,12 @@
 | **柱4/7 人間の曖昧さを鍵源に** | Fuzzy Extractor。手相・虹彩から誤り訂正で安定鍵を再生(生体は保存しない) | `src/fuzzy.js` |
 | **柱6 潜在チャネル** | 発行者だけが読める裏メッセージ(Simmons subliminal channel) | `src/subliminal.js` |
 | **柱8 能動的発火応答** | 改ざん検知を append-only ハッシュチェーンログ(煙)に永久記録 | `src/smoke.js` |
+| **柱7 物理層出力(視覚チャネル)** | 媒体非依存フレーム codec + リプレイ防止(nonce 一回性 + 鮮度窓 + 煙)。実ピクセル/QR/AI 抽出は Phase 2+ アダプタ | `src/visual.js` |
 | **柱10 失敗境界の自己観測抵抗** | 改ざん検知で露出するのは「型(seq)」のみ、核は不漏 | `src/cord.js` |
 
-次イテレーション候補: 柱7(物理層信号)— 画像/センサー絡みのため Phase 2(物理層拡張)向き。
+柱7 はプロトコル層(担体 codec + リプレイ防止)を Phase 2 最小縦切りとして実装済。
+残る物理アダプタ(実ピクセル描画・QR 格子・ECC・カメラ/AI 抽出)は依存を増やすため別腹で継続。
+設計の全体像は `docs/phase2-pillar7-visual-channel.md` を参照。
 
 ### 柱6 潜在チャネル / 柱8 発火応答
 
@@ -88,8 +91,13 @@ combine(a, other, secret); // → { op:'-', matched:false, diff:{ reason:'別案
 ## 使い方
 
 ```bash
-npm run demo    # ひと回しデモ(発行→検証→片割れ拒否→改ざん検知)
-npm test        # 振る舞いテスト(node --test, 依存ゼロ)
+npm run demo            # ひと回しデモ(発行→検証→片割れ拒否→改ざん検知)
+npm run demo:tally      # 柱3 割符演算(+ 統合 / − 差分発火)
+npm run demo:shard      # 柱4 Shamir 秘密分散(閾値未満は復元不能)
+npm run demo:fuzzy      # 柱4/7 Fuzzy Extractor(手相・虹彩から安定鍵)
+npm run demo:subliminal # 柱6 潜在チャネル + 柱8 煙(改ざんで煙が立つ)
+npm run demo:visual     # 柱7 視覚チャネル(担体 codec + リプレイ防止 + 煙)
+npm test                # 振る舞いテスト 61 本(node --test, 依存ゼロ)
 ```
 
 ```js
@@ -158,6 +166,7 @@ rep(otherPersonsPalm, helper);      // 別の key(他人は開けない)
 
 ## ステータス
 
-Phase 0(設計文書化)完了 → **Phase 1(最小 POC)着手・本リポジトリ。10 柱中 9 本実装済** → Phase 2(物理層)…
+Phase 0(設計文書化)完了 → **Phase 1(最小 POC)着手・本リポジトリ。10 柱すべてに実装が到達** → Phase 2(物理アダプタ)…
 
-実装済み柱: 1, 2, 3, 4, 5, 6, 8, 9, 10(残り 柱7 物理層は Phase 2 で)。
+実装済み柱: 1, 2, 3, 4, 5, 6, 8, 9, 10 に加え、柱7 はプロトコル層を Phase 2 最小縦切りで実装。
+柱7 の物理アダプタ(実ピクセル/QR/ECC/AI 抽出)は継続課題。

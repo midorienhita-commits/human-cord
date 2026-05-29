@@ -1,0 +1,13 @@
+flowchart TB
+    issuer[Issuer / private half] -->|derive| kdf["Pillar 1: zodiac multi-axis key"]
+    plain["Plaintext ABCDEF…"] --> micro["Micro layer<br/>Pillars 2,5,6,7"]
+    kdf --> micro
+    micro --> macro["Macro layer<br/>Pillar 9: egg chain"]
+    macro --> deliver([Delivery])
+    deliver --> verify{"Verification<br/>Pillars 3,4"}
+    verify -->|match| merged[Merged display]
+    verify -->|no| smoke["Active response Pillar 8<br/>smoke + public log"]
+    boundary["Pillar 10: failure boundary<br/>(cross-cutting, always active)"]
+    boundary -.- micro
+    boundary -.- macro
+    boundary -.- verify

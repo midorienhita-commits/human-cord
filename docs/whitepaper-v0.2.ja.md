@@ -1,0 +1,276 @@
+<!--
+  human cord 構想白書 v0.2(日本語版・成果物)
+  ソース原稿: Phase 0 Task #6 草稿(§1〜6 文体仕上げ済)
+  本ファイルは外部レビュアー向け配布物。内部メモへの相互参照は除去済。
+-->
+
+# human cord
+
+### 嘘では逃げられない情報インフラ
+#### A Cryptographic Infrastructure for Documentary Integrity in the AI Era
+
+|  |  |
+|---|---|
+| **バージョン** | v0.2(preliminary draft) |
+| **発行日** | 2026-05-29 |
+| **著者** | ⟨本名フルネーム — Phase 3 公開直前に挿入⟩ |
+| **位置付け** | 個人プロジェクト(無所属。いかなる法人・団体にも帰属しない) |
+| **ステータス** | Phase 0(設計文書化)完了 / Phase 1(最小 POC)10 柱すべてに実装到達 / Phase 2(物理層)柱7 プロトコル層に着手 |
+| **連絡先** | ⟨メールアドレス — Phase 3 公開直前に挿入⟩ |
+| **ライセンス** | 本文: Creative Commons Attribution-ShareAlike 4.0 International(CC BY-SA 4.0)<br>関連コード: Apache License, Version 2.0 |
+
+---
+
+## 1. 概要 / Abstract
+
+生成 AI の能力向上にともない、公的書類や証明書を外見的に複製するコストは急激に低下しつつある。従来の電子署名と公開鍵基盤(PKI)は文書の改ざんを検知できるものの、「**この文書は確かに発行者にしか作れない**」という属性を文書そのものに恒常的に保持させる仕組みは十分に整っていない。本白書が提案する human cord は、この空白を埋めるための統合的な暗号インフラの構想である。
+
+human cord は **10 本の柱**を、(i) マクロ層(卵の鎖)、(ii) ミクロ層(卵の中身)、(iii) 鍵派生層、(iv) 検証層、(v) 発火応答層、(vi) 失敗境界横断レイヤ、の **5 領域 + 1 横断**として統合する。各柱は単独では既存の研究・標準に強く接続しており、車輪の再発明を避けつつ、組み合わせ方の独自性として三つの主要な新規性を提示する。第一に、文書レベルへ拡張された Subliminal Channel(柱 6)。第二に、失敗境界における型と秘密の分離を徹底する自己観測抵抗(柱 10)。第三に、BLS 集約署名を演算子として再定式化し、検証失敗時に自動分岐する割符演算 `+/−`(柱 3)である。
+
+中長期の標準化目標として、ISO/IEC 18033(暗号アルゴリズム)、ISO/IEC 27002 附属書(管理策)、および IETF RFC(IRTF CFRG 経由)を視野に入れる。本書執筆時点では Phase 0(設計の文書化)を完了し、Phase 1(Node.js による最小 POC)では 10 本の柱すべてに実装が到達している。
+
+---
+
+## 2. 動機:なぜ人間ではなく仕組みが守るのか
+
+### 2.1 解こうとする問題
+
+公的書類・証明書の外見は、大規模言語モデルと画像生成モデルの組み合わせによって容易に複製可能となりつつある。電子署名は「発行者がその時点で署名した」ことを示すには十分だが、その後の改変を検知できるという受動的な性質にとどまり、「**この文書はそもそも発行者にしか作れない**」という能動的な属性を文書全体に与えるものではない。ブロックチェーンは公開記録の改ざん耐性には強いが、文書そのものの内部に発行者性を埋め込む技術ではなく、両者は補完関係にあるべきである。
+
+### 2.2 プロジェクト憲法(三原則)
+
+human cord は、技術設計に先立つ三つの原則を憲法として持つ。第一に、**嘘では逃げられない仕組み**を作ること。改ざんを未然に防ぐより、改ざんが行われた瞬間に痕跡が残り続けることを優先する。第二に、**権利を主張するのではなく、ルールが守られる状態**を作ること。アクセス制限・コピー防止・自動通報といった「権利主張型」の機構ではなく、真贋判定が誰にでも可能な「ルール遵守型」のインフラを目指す。第三に、**AI は AI、人は人**として、戦わずそれぞれの役目を果たすこと。
+
+### 2.3 第四条:技術・法・倫理の分離
+
+技術は真実を保存する役目に専念し、悪意を罰する役目は法に、正しさを選ぶ役目は倫理にそれぞれ委ねる。human cord は煙を立てるだけであり、その煙を見て裁くのは人間と法の領域である。技術が法や倫理を**置き換えてはならない**点を、本プロジェクトの設計判断の前提として明示する。
+
+### 2.4 既存対策が解けていない三つの隙間
+
+第一に、改ざんが行われたことは検知できても、「誰のものか」をその文書自体から強く言えない点(PKI の限界)。第二に、印刷・スキャン・写真撮影といったメディアのラウンドトリップで暗号的な証拠が失われる点。第三に、失敗時に内部構造が露出してしまう点(side-channel attack / fault attack に対する系統的な対抗策の欠如)。本書で提示する 10 本の柱は、これら三つの隙間をそれぞれ柱 4・柱 7・柱 10 で正面から扱う設計となっている。
+
+---
+
+## 3. アーキテクチャ概観
+
+human cord のアーキテクチャは、伝送路上を流れる「卵の鎖」というメタファーで全体が捉えられる。各卵は標準的な認証付き暗号(AEAD)で封がされ、卵同士はハッシュチェーンで連結される(マクロ層)。各卵の中身は、目玉文字・風景・潜在的なノイズ・物理層信号といった複数のレイヤから構成される(ミクロ層)。これらに、鍵派生・検証・発火応答の三層が外側から重なり、最後に「失敗境界の自己観測抵抗」と呼ぶ横断的な振る舞い規約が全工程を縦に貫く。本章では領域ごとの役割を概観する。
+
+### 3.1 5 領域 + 1 横断
+
+| 領域 | 含む柱 | 役割 |
+|---|---|---|
+| **マクロ層**(卵の鎖) | 9 | 標準 AEAD の上に乗るキャリア |
+| **ミクロ層**(卵の中身) | 2, 5, 6, 7 | 目玉文字置換 / 風景溶込み / 動く核 / 裏チャネル / 物理層信号 |
+| **鍵派生層** | 1 | 干支型多軸鍵 = 時間(公開)× 発行者秘密(私的) |
+| **検証層** | 3, 4 | 割符演算 `+/−` + 発行者の片割れ |
+| **発火層** | 8 | 改ざん検知 → 煙 + public log |
+| **失敗境界(横断)** | **10** | 全工程を縦に貫く。同期破れ検知 / 末端劣化 / 内部状態漏れ耐性 / 観測逃避 |
+
+### 3.2 アーキテクチャ図
+
+図 1 にデータフローの簡略図を示す(レンダリング版は `docs/figures/architecture.ja.svg`)。
+
+```mermaid
+flowchart TB
+    issuer[発行者・片割れ] -->|派生| kdf["柱1 干支型多軸鍵"]
+    plain["原文 ABCDEF…"] --> micro["ミクロ層<br/>柱2,5,6,7"]
+    kdf --> micro
+    micro --> macro["マクロ層<br/>柱9 卵の鎖"]
+    macro --> deliver([配信])
+    deliver --> verify{"検証層<br/>柱3,4"}
+    verify -->|合致| merged[統合表示]
+    verify -->|否| smoke["発火層 柱8<br/>煙 + public log"]
+    boundary["柱10 失敗境界<br/>(全工程を横断して常時作動)"]
+    boundary -.- micro
+    boundary -.- macro
+    boundary -.- verify
+```
+
+### 3.3 10 柱一覧
+
+| # | 柱 | 一行要約 |
+|---|---|---|
+| 1 | 干支型多軸鍵生成 | 時間+秘密で瞬間専用コードブック |
+| 2 | 風景溶込み | 目玉文字だけ置換、他は素通し |
+| 3 | 割符演算 | `+` 統合 / `−` 差分発火 |
+| 4 | 発行者の片割れ | 発行者秘密がないと検証も復号も不能 |
+| 5 | 生きた演算子 | 内部状態が ratchet で動き続ける |
+| 6 | 潜在チャネル | 目玉のノイズ、発行者だけが復号 |
+| 7 | 物理層クロスモーダル信号 | スマホセンサ/カメラで検出可能、印刷耐性 |
+| 8 | 能動的発火応答 | 改ざん検知で「煙」を立てる |
+| 9 | 卵流アーキテクチャ | AEAD + ハッシュチェーン |
+| 10 | 失敗境界の自己観測抵抗 | 横断。割れても型のみ、秘密は出ない |
+
+---
+
+## 4. 主要新規性
+
+### 4.1 柱 6:文書レベルへ拡張された Subliminal Channel
+
+Subliminal Channel(潜在チャネル)の概念は、Gustavus Simmons が CRYPTO '83 で提唱したものであり、電子署名の内部に、署名者だけが読み出せる第二のメッセージを埋め込むことを可能にする [1]。検証者には署名は通常通りに見え、特定の鍵保持者のみが裏のメッセージを復号できる。学術的な研究蓄積は豊富で、Bitcoin の ECDSA における subliminal channel の存在も近年指摘されているが、**実用化された標準は現時点では存在しない**。
+
+human cord はこの概念を単発の電子署名から**文書全体のレベル**へとスケールアップする。目玉文字(柱 2 で導入する選択的に置換された文字)に付随する微小なノイズが文書全体で集積し、発行者だけが復号できる「裏文書」を構成する。検証者の目には通常の証明書として表示される一方、発行者は裏チャネルを読み出すことで「これは確かに自分が発行したものである」という判定を内部的に下せる。
+
+本柱の意義は、AI による外見の完全な複製が成立しても、裏チャネル自体は発行者秘密がなければ生成不能であるという点にある。つまり、視覚的な真贋判定が AI 時代において信頼性を失っていく状況に対し、**目に見えない層で発行者性を保持する**ことを可能にする。
+
+### 4.2 柱 10:失敗境界の自己観測抵抗
+
+暗号システムにおける最大の脆弱性は、しばしば「失敗時」に現れる。fault attack、side-channel attack、downgrade attack といった既知の攻撃群は、いずれもシステムが正常動作から逸脱した瞬間に内部構造が露出する点を突くものである。本柱は、こうした失敗境界における露出を体系的に統制するための横断的な設計原則として導入される。
+
+設計原則は次の一文に集約される。**割れたときに露出するのは「型」だけであり、秘密(発行者鍵および動的な内部状態の現在値)は割れても出ない**。ここで「型」とは Kerckhoffs の原則が公開を前提とする部分であり、具体的には用いられる代数構造・プロトコル識別子・データの参照構造などを指す。これらは公開されても安全性を損なわないが、秘密は常に発行者の片割れに留まり続けなければならない。
+
+本柱は、以下の四つのサブ機能を統合的に束ねる。
+
+| サブ機能 | 内容 | 対応既存技術 |
+|---|---|---|
+| 同期破れ検知 | seq # / nonce のずれを早期に検知 | TLS 1.3 record sequence, QUIC packet number |
+| 制御された末端劣化 | back-pressure による末端からの段階的退避 | TCP flow control, reactive streams |
+| 内部状態漏れ耐性 | 割れても核の現在状態は出ない | Side-channel masking, fault-injection countermeasures |
+| 観測逃避表現 | screenshot/OCR で同一パターンが二度取れない | Moving-target defense |
+
+既存の fault tolerance、side-channel countermeasures、ratchet 研究はそれぞれ独立した蓄積を持つが、これらを一つの設計原則で束ねるフレームは類例が少ない。本柱の独自性は、Kerckhoffs 原則の「型と秘密の分離」を、**失敗境界という具体的な操作可能な場面**で実装規約として明文化した点にある。
+
+### 4.3 柱 3:割符演算 `+/−` における失敗時自動分岐
+
+電子署名の集約や複数証明書の関係性検証については、BLS Aggregate Signature(Boneh-Lynn-Shacham, 2004)[2]、Cryptographic Accumulator、W3C Verifiable Credentials の Presentation 機構、Myers diff、Merkle DAG diff など、多数の既存技術が存在する。これらはそれぞれ独立した目的で発展してきたが、業務上の真贋判定 UX という観点では、必ずしも統合的に提供されていない。
+
+human cord は、これらを**一つの演算子代数**に統合する。具体的には、`+` 演算が BLS 集約・Accumulator のメンバーシップ証明・VC Presentation を同一の操作として表現し、`−` 演算は `+` の失敗時に自動的にフォールバックする差分提示モードとして定義される。**演算が失敗した場合にエラーを返すのではなく、別の有用な情報(差分単文)を返す**という設計は、暗号プロトコルとしては珍しい部類に属する。
+
+本柱の業務上の意義は明確である。ISMS 監査において従来は「単発の署名が検証可能か」という二値判定にとどまっていたものが、「**複数の証明書の関係性まで検証可能**」な記述能力へと拡張される。実務 UX としては、検証者は常に「合致して統合された 1 枚」または「差分が明示された比較表示」のいずれかを得ることになり、判定不能という状態が原理的に発生しない。
+
+### 4.4 柱 7:物理層クロスモーダル信号(視覚チャネル)
+
+印刷・スキャン・写真撮影といったメディアのラウンドトリップに耐える暗号信号という研究領域は、EURion constellation、TEMPEST、Li-Fi 等の交差点に位置し、暗号工学の主流からは比較的若い領域である。実用化された標準は現時点では存在しない。
+
+human cord はこの柱について、Phase 2 で**プロトコル層の最小実装**に着手した。設計上の要点は二つである。第一に、保証の所在を明確に分離する——**スマホの AI 画像解析は「目」(歪み・光・部分欠損に対する頑健性)を担い、暗号的保証(真正性・改ざん検知・新鮮性)は cord 側が担う**。AI の高度化は保証を肩代わりしない。第二に、**光チャネル自体はリプレイ攻撃を防げない**(画面を撮った画像は再表示・再撮影で複製できる)という事実を前提に、リプレイ防止を「チャネル」ではなく「プロトコル」へ置く。具体的には、発行ごとに一意な nonce(鎖先端ハッシュ)の一回性検証と、公開時刻軸に基づく鮮度窓、改ざん・再提示の検知時に立つ「煙」(柱 8)を組み合わせる。
+
+この縦切りは BiosGuide における証明書発行という具体的な業務フィールドで最初の応用例を得る見込みであり、実ピクセル描画・誤り訂正符号・カメラ/AI 抽出といった物理アダプタは継続課題として残る。
+
+---
+
+## 5. 既存研究との接続
+
+human cord の各柱は、いずれも既存の暗号研究・標準・実装に強い接続を持つ。新規性は個別技術の発明ではなく、組み合わせ方とその上に被せる横断的な設計原則にある。本章では、車輪の再発明を避けるために行った既存研究のマッピングと、上位研究領域への位置づけを示す。
+
+### 5.1 10 柱 × 既存技術 マトリクス(圧縮版)
+
+| 柱 | 主要既存技術 | 標準化状況 |
+|---|---|---|
+| 1 干支型多軸鍵 | KDF / HKDF / ChaCha | NIST SP 800-108 / RFC 5869 |
+| 2 風景溶込み | FPE / Steganography | NIST SP 800-38G(FPE) |
+| 3 割符演算 | BLS Aggregate Sig / Accumulator / VC | IETF draft-irtf-cfrg-bls-signature |
+| 4 発行者の片割れ | PKI X.509 / Threshold Sig / Shamir SS | RFC 5280 / ISO/IEC 11770 |
+| 5 生きた演算子 | Signal Double Ratchet / Sponge | IRTF CFRG / Signal spec |
+| 6 潜在チャネル | **Simmons Subliminal Channel(1983)** | (標準化空白) |
+| 7 物理層信号 | Physical-Layer Security / EURion / Li-Fi | IEEE 1900 series / 802.15.7 |
+| 8 発火応答 | Cryptographic Tripwire / HSM tamper / 透明性ログ | FIPS 140-3 L4 / RFC 6962 |
+| 9 卵流アーキ | AES-GCM / ChaCha20-Poly1305 / TLS 1.3 | RFC 8446 / NIST SP 800-38D |
+| 10 失敗境界 | Side-channel countermeasures / MTD | (横断的、統合標準なし) |
+
+### 5.2 上位研究領域への位置づけ
+
+human cord 全体は、**Moving Target Defense (MTD) Cryptography** という現役研究領域の一つの実装として位置付けることができる。MTD は、DARPA Moving Target program(2010 年〜)や NIST SP 800-160 Vol. 2(Systems Security Engineering)を中心に研究蓄積が進められているが、2026 年現在において汎用的な標準は未だ確立されていない。本書は、human cord をこの空白に対する標準提案候補として位置付ける。
+
+### 5.3 既存 vs 新規 の明示
+
+新規性の主張範囲を明示するため、各柱の貢献区分を以下に整理する。柱 1・4・9 は既存技術をそのまま採用しており、新規性は主張しない(車輪の再発明回避)。柱 2・5・7・8 は既存技術からの派生・拡張に位置する。柱 3・6・10 においては相応の新規貢献余地があり、本書 §4 で詳述した通りである。そして、10 本の柱を 5 領域 + 1 横断として一枚の設計図に繋ぐ統合フレームそのものを、本書のもう一つの貢献として提示する。
+
+---
+
+## 6. ロードマップと現状
+
+human cord プロジェクトは、設計の文書化から標準化に至るまで 6 つのフェーズで構成される。各フェーズは独立した出口成果物を持ち、段階的に検証可能な形で進められる。本章では全体ロードマップと、最終目的地である国際標準化に至る複数のターゲット規格を示す。
+
+### 6.1 6 フェーズロードマップ
+
+| Phase | 出口 | 状態 |
+|---|---|---|
+| 0 土台を文書化 | 夢ログ集 + 魂メモ + アーキテクチャ図 + サーベイ + 本白書 | **完了** |
+| 1 Node.js 最小 POC | 動く human cord 最小版 | **10 柱すべてに実装到達(依存ゼロ、テスト 61 件)** |
+| 2 物理層への拡張 | 印刷・撮影で生き残る human cord | **着手(柱7 プロトコル層 POC、物理アダプタ継続)** |
+| 3 構想白書 v0.2 | 日英 5 ページ仕様書 | 本書 = 仕上げ中 |
+| 4 BiosGuide 統合 | 証明書発行 + 監査ログに組込 | 未着手 |
+| 5 Blancco アプローチ | 技術担当との対話開始 | 未着手 |
+| 6 標準化 | IACR ePrint → SCIS → 国際学会 → IETF/NIST → ISO/IEC | 未着手 |
+
+### 6.2 標準化ターゲット
+
+| ターゲット規格 | 該当する柱 | 着地時期目安 |
+|---|---|---|
+| ISO/IEC 18033(暗号アルゴリズム) | 柱 5, 6, 9 統合 | 5〜10 年 |
+| ISO/IEC 29192(軽量暗号) | BiosGuide IoT 応用 | 3〜7 年 |
+| ISO/IEC 19772(認証付き暗号) | 柱 3 + 柱 9 | 3〜5 年 |
+| ISO/IEC 27002 附属書 | 全体運用ガイダンス | 3〜5 年 |
+| IETF RFC(IRTF CFRG 経由) | 柱 5, 6, 8 個別仕様 | 2〜4 年 |
+
+**最短ルート**: IRTF CFRG → IETF RFC → ISO 採用
+
+---
+
+## 7. 参考文献
+
+1. Simmons, G. J. (1984). "The Prisoners' Problem and the Subliminal Channel." In *Advances in Cryptology: Proceedings of CRYPTO '83*, pp. 51–67. Plenum Press.
+2. Boneh, D., Lynn, B., Shacham, H. (2004). "Short Signatures from the Weil Pairing." *Journal of Cryptology*, 17(4), 297–319.
+3. Boneh, D., Gentry, C., Lynn, B., Shacham, H. (2003). "Aggregate and Verifiably Encrypted Signatures from Bilinear Maps." In *EUROCRYPT 2003*, LNCS 2656, pp. 416–432.
+4. Shamir, A. (1979). "How to Share a Secret." *Communications of the ACM*, 22(11), 612–613.
+5. Dodis, Y., Reyzin, L., Smith, A. (2004). "Fuzzy Extractors: How to Generate Strong Keys from Biometrics and Other Noisy Data." In *EUROCRYPT 2004*, LNCS 3027, pp. 523–540.
+6. Bertoni, G., Daemen, J., Peeters, M., Van Assche, G. (2007). "Sponge Functions." *ECRYPT Hash Workshop 2007*.
+7. Bernstein, D. J. (2008). "ChaCha, a Variant of Salsa20." *Workshop Record of SASC 2008*.
+8. Marlinspike, M., Perrin, T. (2016). "The Double Ratchet Algorithm." Signal Technical Specification.
+9. Kerckhoffs, A. (1883). "La cryptographie militaire." *Journal des sciences militaires*, IX, 5–38.
+10. Camenisch, J., Lysyanskaya, A. (2002). "Dynamic Accumulators and Application to Efficient Revocation of Anonymous Credentials." In *CRYPTO 2002*, LNCS 2442, pp. 61–76.
+11. Sporny, M., Longley, D., Chadwick, D. (2022). "Verifiable Credentials Data Model v1.1." W3C Recommendation.
+12. Myers, E. W. (1986). "An O(ND) Difference Algorithm and Its Variations." *Algorithmica*, 1(1–4), 251–266.
+13. Merkle, R. C. (1988). "A Digital Signature Based on a Conventional Encryption Function." In *CRYPTO '87*, LNCS 293, pp. 369–378.
+14. Kocher, P., Jaffe, J., Jun, B. (1999). "Differential Power Analysis." In *CRYPTO '99*, LNCS 1666, pp. 388–397.
+15. Boneh, D., DeMillo, R. A., Lipton, R. J. (2001). "On the Importance of Eliminating Errors in Cryptographic Computations." *Journal of Cryptology*, 14(2), 101–119.
+16. Genkin, D., Shamir, A., Tromer, E. (2014). "RSA Key Extraction via Low-Bandwidth Acoustic Cryptanalysis." In *CRYPTO 2014*, LNCS 8616, pp. 444–461.
+17. Pfitzmann, B., Waidner, M. (1992). "Attacks on Protocols for Server-Aided RSA Computation." In *EUROCRYPT '92*, LNCS 658.
+18. NIST (2007). *SP 800-38D: Recommendation for Block Cipher Modes of Operation: Galois/Counter Mode (GCM) and GMAC*.
+19. NIST (2016). *SP 800-38G: Recommendation for Block Cipher Modes of Operation: Methods for Format-Preserving Encryption*.
+20. NIST (2008/2022). *SP 800-108 Rev.1: Recommendation for Key Derivation Using Pseudorandom Functions*.
+21. NIST (2018). *SP 800-160 Vol. 2: Developing Cyber-Resilient Systems — A Systems Security Engineering Approach*.
+22. NIST (2019). *FIPS 140-3: Security Requirements for Cryptographic Modules*.
+23. IETF (2010). *RFC 5869: HMAC-based Extract-and-Expand Key Derivation Function (HKDF)*.
+24. IETF (2008). *RFC 5280: Internet X.509 Public Key Infrastructure Certificate and CRL Profile*.
+25. IETF (2018). *RFC 8446: The Transport Layer Security (TLS) Protocol Version 1.3*.
+26. IETF (2018). *RFC 8439: ChaCha20 and Poly1305 for IETF Protocols*.
+27. IETF (2013). *RFC 6962: Certificate Transparency*.
+28. ISO/IEC (2021). *ISO/IEC 18033-1:2021: Information security — Encryption algorithms — Part 1: General*.
+29. ISO/IEC (2012). *ISO/IEC 29192-1:2012: Information technology — Security techniques — Lightweight cryptography — Part 1: General*.
+30. ISO/IEC (2020). *ISO/IEC 19772:2020: Information security — Authenticated encryption*.
+31. ISO/IEC (2010). *ISO/IEC 11770-1:2010: Information technology — Security techniques — Key management — Part 1: Framework*.
+32. ISO/IEC (2022). *ISO/IEC 27002:2022: Information security, cybersecurity and privacy protection — Information security controls*.
+33. IEEE (2018). *IEEE 802.15.7-2018: Short-Range Optical Wireless Communications*.
+34. Haas, H., Yin, L., Wang, Y., Chen, C. (2016). "What is LiFi?" *Journal of Lightwave Technology*, 34(6), 1533–1544.
+35. Mukhopadhyay, D., Chakraborty, R. S. (2014). *Hardware Security: Design, Threats, and Safeguards*. CRC Press.
+
+> 注: 各エントリは公知の規格・論文に基づくが、版数・発行年は配布前に最終照合する。Phase 3 完了時に 35→40 件規模へ追補予定。
+
+---
+
+## 付録 A: 用語対応表(比喩 ↔ 暗号工学)
+
+| 比喩(human cord) | 暗号工学 |
+|---|---|
+| 卵 | AEAD record / sealed box |
+| 卵の鎖 | hash-linked record stream |
+| 卵の核 | stateful operator (ratchet) |
+| 目玉文字 | selectively format-preserved substituted character |
+| 目玉のノイズ | subliminal channel payload |
+| 風景溶込み | non-substituted plaintext context |
+| 干支型多軸 | multi-dimensional KDF input |
+| 通行手形 | issuer-specific verification key |
+| 割符 | issuer's private half (cf. PKI private key) |
+| 煙 | tamper-evident broadcast signal |
+| 片割れ | private half of an asymmetric pair |
+| 失敗境界 | failure-mode operational boundary |
+| リズム狂い | seq # / nonce desync |
+| 末端の卵が落ちる | back-pressure-induced graceful degradation |
+
+---
+
+## 履歴
+
+- 2026-05-28 Phase 0 Task #6 として日本語版を作成、§1〜6 を白書文体に仕上げ。
+- 2026-05-29 外部配布物として `docs/` に確定版を起こす。表紙確定要素を充足(著者名・連絡先は Phase 3 公開直前挿入のプレースホルダ、その他は確定)、ステータスを現況に更新、§4.4 柱7 を Phase 2 プロトコル層 POC として昇格、アーキテクチャ図を Mermaid 化、参考文献を 12→35 件に増強。

@@ -1,0 +1,13 @@
+flowchart TB
+    issuer[発行者・片割れ] -->|派生| kdf["柱1 干支型多軸鍵"]
+    plain["原文 ABCDEF…"] --> micro["ミクロ層<br/>柱2,5,6,7"]
+    kdf --> micro
+    micro --> macro["マクロ層<br/>柱9 卵の鎖"]
+    macro --> deliver([配信])
+    deliver --> verify{"検証層<br/>柱3,4"}
+    verify -->|合致| merged[統合表示]
+    verify -->|否| smoke["発火層 柱8<br/>煙 + public log"]
+    boundary["柱10 失敗境界<br/>(全工程を横断して常時作動)"]
+    boundary -.- micro
+    boundary -.- macro
+    boundary -.- verify

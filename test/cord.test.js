@@ -58,7 +58,7 @@ test('柱10: 卵の順序入れ替えを検知(AAD に seq を含むため)', ()
 
 test('柱5: 同一平文チャンクでも卵ごとに暗号文が異なる(ratchet)', () => {
   // 16 文字 'A' × 2 卵 → 同じ平文チャンクだが ct は不一致
-  const cord = seal('A'.repeat(32), SECRET, 'ctx', 16);
+  const cord = seal('A'.repeat(32), SECRET, 'ctx', { chunkSize: 16 });
   assert.notEqual(cord.eggs[0].ct.toString('hex'), cord.eggs[1].ct.toString('hex'));
 });
 

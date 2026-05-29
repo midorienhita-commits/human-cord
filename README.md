@@ -19,11 +19,33 @@
 | **柱9 卵流アーキテクチャ** | AES-256-GCM(AEAD)+ ハッシュチェーン | `src/egg.js` |
 | **柱5 生きた演算子** | HMAC ベースの一方向 ratchet(卵ごとに鍵が進む) | `src/ratchet.js` |
 | **柱2 風景溶込み** | 目玉文字置換(表示用レイヤー、検証非依存) | `src/eyeglyph.js` |
-| **柱4 発行者の片割れ** | 発行者秘密からの ratchet シード導出 | `src/cord.js` |
+| **柱3 割符演算 `+/-`** | 通行手形(HMAC tally)で `+` 統合 / `-` 差分発火 | `src/tally.js` |
+| **柱4 発行者の片割れ** | 発行者秘密からの ratchet シード導出・通行手形導出 | `src/cord.js` |
 | **柱10 失敗境界の自己観測抵抗** | 改ざん検知で露出するのは「型(seq)」のみ、核は不漏 | `src/cord.js` |
 
-次イテレーション候補: 柱1(干支型多軸鍵)/ 柱3(割符演算 `+/-`)/ 柱6(潜在チャネル)/
+次イテレーション候補: 柱1(干支型多軸鍵)/ 柱6(潜在チャネル)/
 柱7(物理層信号)/ 柱8(発火応答)。
+
+### 柱3 割符演算(`+/-`)
+
+江戸の通行手形(割符)= 割った 2 片が噛み合うかで本人確認する仕組み。
+2 つの cord が同一発行者・同一案件(`docId`)なら `+` で統合、噛み合わなければ
+`-` で差分を返す(エラーではなく「どう違うか」という有用情報)。
+
+```js
+import { combine } from './src/tally.js';
+
+const a = seal('消去記録…', secret, 'cert', { docId: 'CASE-0042' });
+const b = seal('破砕記録…', secret, 'cert', { docId: 'CASE-0042' });
+combine(a, b, secret);   // → { op:'+', matched:true, merged:'消去記録…破砕記録…' }
+
+const other = seal('別案件', secret, 'cert', { docId: 'CASE-9999' });
+combine(a, other, secret); // → { op:'-', matched:false, diff:{ reason:'別案件…' } }
+```
+
+夢 1・2 の原典「A+B=一つの文章(合致)/ A−B=違う単文(差分)」に対応。
+白書 §4.3 の BLS 集約署名の演算子化を、POC では依存ゼロの HMAC 通行手形で最小実装
+(将来 BLS / Accumulator へ差し替え可能な境界として設計)。
 
 ---
 

@@ -12,6 +12,7 @@
 //   検証に失敗したとき、露出するのは「型」= どの seq で割れたか だけ。
 //   鍵・平文・ratchet の現在状態(核)は CordTamper に一切載せない。
 
+import { createHmac } from 'node:crypto';
 import { Ratchet } from './ratchet.js';
 import { sealEgg, openEgg, hashEgg, GENESIS } from './egg.js';
 import { toLandscape } from './eyeglyph.js';
@@ -32,14 +33,29 @@ function deriveSeed(issuerSecret, context) {
   return `${issuerSecret}|${context}`;
 }
 
+// 柱3: 通行手形(割符のタグ)。発行者秘密 + docId(案件鍵) + 鎖先端 tip から導出。
+//   - 発行者秘密を知る者だけが再計算できる(片割れ性)
+//   - tip を含むため、卵が 1 bit でも改ざんされると値が変わる
+//   割符演算(combine / verifyTally)は tally.js に分離。
+export function computeTally(issuerSecret, context, docId, tip) {
+  return createHmac('sha256', deriveSeed(issuerSecret, context))
+    .update('human-cord/tally|')
+    .update(String(docId))
+    .update('|')
+    .update(tip)
+    .digest('hex');
+}
+
 /**
  * 平文を human cord(卵の鎖)に封じる。
  * @param {string} plaintext
  * @param {string} issuerSecret 発行者秘密(片割れ)
  * @param {string} [context] 文脈ラベル(同一秘密でも鍵列を分ける軸)
- * @param {number} [chunkSize]
+ * @param {{chunkSize?: number, docId?: string|number|null}} [opts]
+ *        chunkSize: 卵の中身の粒度 / docId: 柱3 割符演算の案件鍵(指定時 tally 付与)
  */
-export function seal(plaintext, issuerSecret, context = 'default', chunkSize = DEFAULT_CHUNK) {
+export function seal(plaintext, issuerSecret, context = 'default', opts = {}) {
+  const { chunkSize = DEFAULT_CHUNK, docId = null } = opts;
   const ratchet = new Ratchet(deriveSeed(issuerSecret, context));
   const chunks = [];
   for (let i = 0; i < plaintext.length; i += chunkSize) {
@@ -56,13 +72,20 @@ export function seal(plaintext, issuerSecret, context = 'default', chunkSize = D
     prevHash = egg.hash;
   });
 
-  return {
+  const cord = {
     version: 'human-cord/0.1',
     context,
     surface: toLandscape(plaintext), // 柱2: 風景(表示用・検証非依存)
     eggs, // 柱9: 卵の鎖(本体)
     tip: prevHash.toString('hex'), // 鎖の先端ハッシュ
   };
+
+  // 柱3: docId 指定時は通行手形(割符タグ)を付与
+  if (docId != null) {
+    cord.docId = docId;
+    cord.tally = computeTally(issuerSecret, context, docId, cord.tip);
+  }
+  return cord;
 }
 
 /**

@@ -13,14 +13,32 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 /** 鎖の起点(genesis prevHash)。全ゼロ 32 バイト。 */
 export const GENESIS = Buffer.alloc(32, 0);
 
+/**
+ * 任意のバッファ表現を生 Buffer に正規化する。
+ *   - 生 Buffer        → そのまま
+ *   - hex 文字列        → Buffer.from(v, 'hex')(これら卵フィールドの正準文字列表現)
+ *   - {type:'Buffer'}  → JSON.stringify→JSON.parse で化けた Buffer(往復復元)
+ *   - number[]          → バイト配列
+ * JSON シリアライズ往復(seal→JSON→open)で egg の prevHash/iv/ct/tag/hash は
+ * {type:'Buffer',data:[…]} に化けるため、コア(hashEgg/openEgg)で吸収する。
+ * 依存ゼロ: node 標準の Buffer のみ。
+ */
+export function toBuf(v) {
+  if (Buffer.isBuffer(v)) return v;
+  if (typeof v === 'string') return Buffer.from(v, 'hex');
+  if (v && v.type === 'Buffer' && Array.isArray(v.data)) return Buffer.from(v.data);
+  if (Array.isArray(v)) return Buffer.from(v);
+  return Buffer.from(v);
+}
+
 /** 卵の正準ハッシュ(seq + prevHash + iv + ct + tag を連結して SHA-256)。 */
 export function hashEgg(egg) {
   return createHash('sha256')
     .update(Buffer.from(String(egg.seq)))
-    .update(egg.prevHash)
-    .update(egg.iv)
-    .update(egg.ct)
-    .update(egg.tag)
+    .update(toBuf(egg.prevHash))
+    .update(toBuf(egg.iv))
+    .update(toBuf(egg.ct))
+    .update(toBuf(egg.tag))
     .digest();
 }
 
@@ -48,11 +66,16 @@ export function sealEgg(seq, prevHash, key, plaintextChunk) {
  * @returns {string} 復号された平文チャンク
  */
 export function openEgg(egg, key) {
-  const aad = Buffer.concat([Buffer.from(String(egg.seq)), egg.prevHash]);
-  const decipher = createDecipheriv('aes-256-gcm', key, egg.iv);
+  // JSON 往復後は各フィールドが {type:'Buffer'} 化しているため生 Buffer に正規化。
+  const prevHash = toBuf(egg.prevHash);
+  const iv = toBuf(egg.iv);
+  const ct = toBuf(egg.ct);
+  const tag = toBuf(egg.tag);
+  const aad = Buffer.concat([Buffer.from(String(egg.seq)), prevHash]);
+  const decipher = createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAAD(aad);
-  decipher.setAuthTag(egg.tag);
+  decipher.setAuthTag(tag);
   // final() で認証タグを検証。改ざん・鍵違いなら throw。
-  const pt = Buffer.concat([decipher.update(egg.ct), decipher.final()]);
+  const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
   return pt.toString('utf8');
 }

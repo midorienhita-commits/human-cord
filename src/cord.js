@@ -14,7 +14,7 @@
 
 import { createHmac } from 'node:crypto';
 import { Ratchet } from './ratchet.js';
-import { sealEgg, openEgg, hashEgg, GENESIS } from './egg.js';
+import { sealEgg, openEgg, hashEgg, GENESIS, toBuf } from './egg.js';
 import { toLandscape } from './eyeglyph.js';
 import { timeAxes, deriveCodebook } from './kdf.js';
 
@@ -130,9 +130,5 @@ export function open(cord, issuerSecret) {
   return out;
 }
 
-// JSON 経由などで Buffer が {type:'Buffer',data:[…]} 化していても吸収する保険。
-function toBuf(v) {
-  if (Buffer.isBuffer(v)) return v;
-  if (v && v.type === 'Buffer' && Array.isArray(v.data)) return Buffer.from(v.data);
-  return Buffer.from(v);
-}
+// Buffer 正規化(toBuf)は egg.js に集約。JSON 往復・hex 文字列・{type:'Buffer'}
+// のいずれの表現でも、open() の鎖検証と hashEgg/openEgg が同じ生 Buffer を見る。

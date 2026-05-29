@@ -1,0 +1,14 @@
+{
+  "name": "human-cord",
+  "version": "0.1.0",
+  "description": "human cord — 嘘では逃げられない情報インフラ (Phase 1 POC)",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "demo": "node examples/demo.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

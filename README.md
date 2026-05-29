@@ -22,9 +22,31 @@
 | **柱2 風景溶込み** | 目玉文字置換(表示用レイヤー、検証非依存) | `src/eyeglyph.js` |
 | **柱3 割符演算 `+/-`** | 通行手形(HMAC tally)で `+` 統合 / `-` 差分発火 | `src/tally.js` |
 | **柱4 発行者の片割れ** | 発行者秘密が無いとコードブック・通行手形を再現不能 | `src/cord.js` |
+| **柱6 潜在チャネル** | 発行者だけが読める裏メッセージ(Simmons subliminal channel) | `src/subliminal.js` |
+| **柱8 能動的発火応答** | 改ざん検知を append-only ハッシュチェーンログ(煙)に永久記録 | `src/smoke.js` |
 | **柱10 失敗境界の自己観測抵抗** | 改ざん検知で露出するのは「型(seq)」のみ、核は不漏 | `src/cord.js` |
 
-次イテレーション候補: 柱6(潜在チャネル)/ 柱7(物理層信号)/ 柱8(発火応答)。
+次イテレーション候補: 柱7(物理層信号)— 画像/センサー絡みのため Phase 2(物理層拡張)向き。
+
+### 柱6 潜在チャネル / 柱8 発火応答
+
+```js
+import { embedSubliminal, readSubliminal } from './src/subliminal.js';
+import { SmokeLog, guardedOpen } from './src/smoke.js';
+
+// 柱6: 表は誰でも検証できるが、裏は発行者だけが読める
+let cord = embedSubliminal(seal('証明書本体', secret, 'ctx'), secret, '発行者控え');
+readSubliminal(cord, secret);      // → '発行者控え'
+readSubliminal(cord, otherSecret); // → null(ノイズにしか見えない)
+
+// 柱8: 改ざんを検知したら「煙」を append-only ログに記録(遡及改ざん不能)
+const log = new SmokeLog();
+guardedOpen(tamperedCord, secret, log); // 改ざんなら throw + log.raise('tamper', …)
+log.verify();                           // ログ自体の整合性(煙は消せない)
+```
+
+- 柱6 は夢4(目玉の見えないノイズ)/ 白書 §4.1。表チャネル(open)に影響しない独立の第二チャネル。
+- 柱8 は夢6(悪さをすると煙が立つ)。「火のないところに煙は立たぬ」の逆実装。罰しないが、煙は誰の目にも残る(第二条)。
 
 ### 柱1 干支型多軸鍵(時計は公開・秘密だけが片割れ)
 
@@ -104,4 +126,6 @@ const text = open(cord, issuerSecret);   // 発行者秘密が無ければ CordT
 
 ## ステータス
 
-Phase 0(設計文書化)完了 → **Phase 1(最小 POC)着手・本リポジトリ** → Phase 2(物理層)…
+Phase 0(設計文書化)完了 → **Phase 1(最小 POC)着手・本リポジトリ。10 柱中 9 本実装済** → Phase 2(物理層)…
+
+実装済み柱: 1, 2, 3, 4, 5, 6, 8, 9, 10(残り 柱7 物理層は Phase 2 で)。

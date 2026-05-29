@@ -23,6 +23,7 @@
 | **柱3 割符演算 `+/-`** | 通行手形(HMAC tally)で `+` 統合 / `-` 差分発火 | `src/tally.js` |
 | **柱4 発行者の片割れ** | 発行者秘密が無いとコードブック・通行手形を再現不能 | `src/cord.js` |
 | **柱4深化 割符の情報理論的分割** | Shamir 秘密分散(GF256)。閾値未満は計算無限でも復元不能 | `src/shard.js` |
+| **柱4/7 人間の曖昧さを鍵源に** | Fuzzy Extractor。手相・虹彩から誤り訂正で安定鍵を再生(生体は保存しない) | `src/fuzzy.js` |
 | **柱6 潜在チャネル** | 発行者だけが読める裏メッセージ(Simmons subliminal channel) | `src/subliminal.js` |
 | **柱8 能動的発火応答** | 改ざん検知を append-only ハッシュチェーンログ(煙)に永久記録 | `src/smoke.js` |
 | **柱10 失敗境界の自己観測抵抗** | 改ざん検知で露出するのは「型(seq)」のみ、核は不漏 | `src/cord.js` |
@@ -114,14 +115,24 @@ const text = open(cord, issuerSecret);   // 発行者秘密が無ければ CordT
 - 目指すのは **計算量的安全(計算が困難)を超えた情報理論的安全(計算と無関係に不可能)**。
   突破のボトルネックを「計算力」ではなく「人間が物理的に持つ片割れ」に置く。
 
-`src/shard.js`(Shamir 秘密分散)はこの原則の最初の実装: 発行者の片割れを n 片に分割し、
-閾値 k 片あれば復元できるが、**k 未満では計算能力が無限でも秘密について何も分からない**。
+この原則の 2 つの実装:
 
+**1. Shamir 秘密分散(`src/shard.js`)** — 片割れを情報理論的に分割。
 ```js
 import { split, combine } from './src/shard.js';
 const shares = split(Buffer.from(issuerSecret), 5, 3); // 5 片・閾値 3
 combine([shares[1], shares[2], shares[4]]); // 3 片 → 秘密を復元 → open 可能
 combine([shares[0], shares[1]]);            // 2 片 → ゴミ(情報理論的に復元不能)
+```
+
+**2. Fuzzy Extractor(`src/fuzzy.js`)** — 人間の曖昧さ(手相・虹彩)を鍵源に。
+生体テンプレートは保存せず、誤り訂正で毎回「同じ鍵」を再生する。突破には
+発行者の手・眼が物理的に必要(計算では取得不能)。`cord` = 手のひらで結ぶ紐、の原点。
+```js
+import { gen, rep } from './src/fuzzy.js';
+const { key, helper } = gen(palmFeature, 'palm');  // 'palm'(手相) | 'iris'(虹彩)
+rep(slightlyDifferentPalm, helper); // 曖昧でも同じ key(本人)
+rep(otherPersonsPalm, helper);      // 別の key(他人は開けない)
 ```
 
 ## 設計原則(柱10)

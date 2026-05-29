@@ -16,15 +16,18 @@
 // 通行手形で割符性を最小実装(将来 BLS/Accumulator へ差し替え可能な境界)。
 
 import { open, computeTally, CordTamper } from './cord.js';
+import { deriveCodebook } from './kdf.js';
 
 /**
- * 通行手形の検証。発行者秘密で tally を再計算して一致を確認し、
- * さらに本体(卵の鎖)が改ざんされていないことを open で確かめる。
+ * 通行手形の検証。発行者秘密 + 公開軸(cord.kdf)でコードブックを再現し、
+ * tally を再計算して一致を確認、さらに本体(卵の鎖)の改ざんが無いことを
+ * open で確かめる。
  * @returns {boolean}
  */
 export function verifyTally(cord, issuerSecret) {
-  if (!cord || cord.tally == null || cord.docId == null) return false;
-  const expected = computeTally(issuerSecret, cord.context, cord.docId, cord.tip);
+  if (!cord || cord.tally == null || cord.docId == null || !cord.kdf) return false;
+  const codebook = deriveCodebook(issuerSecret, cord.context, cord.kdf); // 柱1
+  const expected = computeTally(codebook, cord.docId, cord.tip);
   if (expected !== cord.tally) return false; // 片割れが噛み合わない
   try {
     open(cord, issuerSecret); // 中身の整合(柱10)も満たすか

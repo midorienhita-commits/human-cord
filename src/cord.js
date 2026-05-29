@@ -16,6 +16,7 @@ import { createHmac } from 'node:crypto';
 import { Ratchet } from './ratchet.js';
 import { sealEgg, openEgg, hashEgg, GENESIS } from './egg.js';
 import { toLandscape } from './eyeglyph.js';
+import { timeAxes, deriveCodebook } from './kdf.js';
 
 const DEFAULT_CHUNK = 16; // AES ブロック相当(16 文字 = 卵の中身の粒度)
 
@@ -28,17 +29,16 @@ export class CordTamper extends Error {
   }
 }
 
-// 柱4: 発行者の片割れ。issuerSecret を知る者だけが同じ ratchet を再現できる。
-function deriveSeed(issuerSecret, context) {
-  return `${issuerSecret}|${context}`;
-}
+// 柱1+柱4: コードブック = 公開軸(時間多軸, cord.kdf)× 私的軸(発行者秘密)。
+//   「時計は公開・秘密だけが片割れ」。ratchet(柱5)と通行手形(柱3)の共通の根。
+//   導出ロジックは kdf.js(deriveCodebook)に分離。
 
-// 柱3: 通行手形(割符のタグ)。発行者秘密 + docId(案件鍵) + 鎖先端 tip から導出。
-//   - 発行者秘密を知る者だけが再計算できる(片割れ性)
+// 柱3: 通行手形(割符のタグ)。コードブック + docId(案件鍵) + 鎖先端 tip の HMAC。
+//   - コードブックは発行者秘密が無いと再現できない(片割れ性)
 //   - tip を含むため、卵が 1 bit でも改ざんされると値が変わる
 //   割符演算(combine / verifyTally)は tally.js に分離。
-export function computeTally(issuerSecret, context, docId, tip) {
-  return createHmac('sha256', deriveSeed(issuerSecret, context))
+export function computeTally(codebook, docId, tip) {
+  return createHmac('sha256', codebook)
     .update('human-cord/tally|')
     .update(String(docId))
     .update('|')
@@ -51,12 +51,14 @@ export function computeTally(issuerSecret, context, docId, tip) {
  * @param {string} plaintext
  * @param {string} issuerSecret 発行者秘密(片割れ)
  * @param {string} [context] 文脈ラベル(同一秘密でも鍵列を分ける軸)
- * @param {{chunkSize?: number, docId?: string|number|null}} [opts]
+ * @param {{chunkSize?: number, docId?: string|number|null, axes?: object}} [opts]
  *        chunkSize: 卵の中身の粒度 / docId: 柱3 割符演算の案件鍵(指定時 tally 付与)
+ *        axes: 柱1 時間多軸(省略時は現在時刻から導出。テストで固定値を渡せる)
  */
 export function seal(plaintext, issuerSecret, context = 'default', opts = {}) {
-  const { chunkSize = DEFAULT_CHUNK, docId = null } = opts;
-  const ratchet = new Ratchet(deriveSeed(issuerSecret, context));
+  const { chunkSize = DEFAULT_CHUNK, docId = null, axes = timeAxes() } = opts;
+  const codebook = deriveCodebook(issuerSecret, context, axes); // 柱1: 干支型多軸鍵
+  const ratchet = new Ratchet(codebook); // 柱5: コードブックを根に鍵が進む
   const chunks = [];
   for (let i = 0; i < plaintext.length; i += chunkSize) {
     chunks.push(plaintext.slice(i, i + chunkSize));
@@ -75,6 +77,7 @@ export function seal(plaintext, issuerSecret, context = 'default', opts = {}) {
   const cord = {
     version: 'human-cord/0.1',
     context,
+    kdf: axes, // 柱1: 時間多軸(公開軸)。時計は公開・秘密だけが片割れ
     surface: toLandscape(plaintext), // 柱2: 風景(表示用・検証非依存)
     eggs, // 柱9: 卵の鎖(本体)
     tip: prevHash.toString('hex'), // 鎖の先端ハッシュ
@@ -83,7 +86,7 @@ export function seal(plaintext, issuerSecret, context = 'default', opts = {}) {
   // 柱3: docId 指定時は通行手形(割符タグ)を付与
   if (docId != null) {
     cord.docId = docId;
-    cord.tally = computeTally(issuerSecret, context, docId, cord.tip);
+    cord.tally = computeTally(codebook, docId, cord.tip);
   }
   return cord;
 }
@@ -93,7 +96,9 @@ export function seal(plaintext, issuerSecret, context = 'default', opts = {}) {
  * @returns {string} 復元された平文
  */
 export function open(cord, issuerSecret) {
-  const ratchet = new Ratchet(deriveSeed(issuerSecret, cord.context));
+  // 柱1: cord.kdf(公開軸)+ 発行者秘密(私的軸)で同じコードブックを再現
+  const codebook = deriveCodebook(issuerSecret, cord.context, cord.kdf);
+  const ratchet = new Ratchet(codebook);
   let prevHash = GENESIS;
   let out = '';
 

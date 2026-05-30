@@ -26,6 +26,7 @@ import { guardedOpen } from './smoke.js';
 // 視覚チャネルと共有する基盤(freshness.js に括り出し済 — メモ §7)
 import { FreshnessGuard, reviveBuffers } from './freshness.js';
 export { FreshnessGuard } from './freshness.js';
+import { encodeBlocks, decodeBlocks, RsError } from './ecc.js';
 
 // ── 変調パラメータ(f0/f1 は fs/N の整数倍 = 直交)───────────────
 const SAMPLE_RATE = 16000;
@@ -33,8 +34,10 @@ const SYMBOL_SAMPLES = 16;     // 1 ビット = 16 サンプル → 1000 baud
 const FREQ0 = 2000;            // bit 0 (k=2)
 const FREQ1 = 4000;            // bit 1 (k=4)
 const AMP = 0x3fff;            // 16bit PCM の約半分
-const PREAMBLE = 0xac;         // フレーム先頭マーカー
+const PREAMBLE = 0xac;         // プレーンフレームの先頭マーカー
+const PREAMBLE_ECC = 0xec;     // RS 訂正つきフレームの先頭マーカー
 const CKSUM_LEN = 4;           // sha256 先頭 4 バイト
+const ECC = { nsym: 32, k: 223 }; // 255 ブロック / 16 誤り訂正/ブロック
 
 /** 音響担体の読み取り破損(同期ずれ・雑音・改ざんで枠が壊れた)を表す例外。 */
 export class AudioFrameError extends Error {
@@ -48,13 +51,39 @@ function checksum(buf) {
   return createHash('sha256').update(buf).digest().subarray(0, CKSUM_LEN);
 }
 
-// ── フレーム: [preamble(1)][len(4 BE)][payload][cksum(4)] ───────
+// ── プレーンフレーム: [preamble(1)][len(4 BE)][payload][cksum(4)] ───
 function frame(payload) {
   const len = Buffer.alloc(4);
   len.writeUInt32BE(payload.length, 0);
   return Buffer.concat([Buffer.from([PREAMBLE]), len, payload, checksum(payload)]);
 }
+
+// ── ECC フレーム: [preambleEcc(1)] + RS(encodeBlocks([payload][cksum(4)])) ──
+//   payload + cksum を丸ごと RS 保護(プリアンブル 1 バイト以外は訂正可能)。
+function frameEcc(payload) {
+  const inner = Buffer.concat([payload, checksum(payload)]);
+  return Buffer.concat([Buffer.from([PREAMBLE_ECC]), encodeBlocks(inner, ECC)]);
+}
+
+// プレーン / ECC をプリアンブルで自動判別して payload を返す。
 function deframe(bytes) {
+  if (bytes.length < 1) throw new AudioFrameError('empty frame');
+
+  if (bytes[0] === PREAMBLE_ECC) {
+    let inner;
+    try {
+      inner = decodeBlocks(bytes.subarray(1), ECC).data; // RS で訂正
+    } catch (e) {
+      if (e instanceof RsError) throw new AudioFrameError(`ECC uncorrectable: ${e.message}`);
+      throw e;
+    }
+    if (inner.length < CKSUM_LEN) throw new AudioFrameError('recovered frame too short');
+    const payload = inner.subarray(0, inner.length - CKSUM_LEN);
+    const cksum = inner.subarray(inner.length - CKSUM_LEN);
+    if (!checksum(payload).equals(cksum)) throw new AudioFrameError('checksum mismatch after ECC');
+    return Buffer.from(payload);
+  }
+
   if (bytes.length < 1 + 4 + CKSUM_LEN) throw new AudioFrameError('frame too short');
   if (bytes[0] !== PREAMBLE) throw new AudioFrameError('preamble not found (sync lost)');
   const len = bytes.readUInt32BE(1);
@@ -153,7 +182,18 @@ export function renderAudio(cord) {
 }
 
 /**
- * ① extractAudio: 音響担体 → cord。復調 → 枠/長さ/チェックサム検証 → バイト忠実復元。
+ * ① renderAudioEcc: renderAudio の頑健版。payload を Reed-Solomon で保護してから変調する。
+ *   再録音・圧縮・環境雑音で波形が一部化けても、能力内なら extractAudio が訂正して復元する
+ *   (視覚担体の HC2 と同型。src/ecc.js を共有)。
+ * @returns {Int16Array}
+ */
+export function renderAudioEcc(cord) {
+  const payload = Buffer.from(JSON.stringify(cord), 'utf8');
+  return modulate(frameEcc(payload));
+}
+
+/**
+ * ① extractAudio: 音響担体 → cord。復調 → 枠(プレーン/ECC 自動判別)→ バイト忠実復元。
  *   破損していれば AudioFrameError(復号より手前で弾く=媒体エラーと改ざんを分離)。
  * @param {Int16Array} samples
  * @returns {object} cord

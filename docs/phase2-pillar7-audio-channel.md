@@ -118,7 +118,9 @@ cord の本質的な証明(署名・ハッシュ・nonce・潜在 payload)を、
 2. ✅ freshness — `src/visual.js` の `FreshnessGuard` を import 共有(nonce=tip 一回性 + 鮮度窓)。
    `reviveBuffers` も visual から共有(export 追加)。`src/freshness.js` への正式切り出しは引き続き候補(§7)。
 3. ✅ リプレイ/改ざん検知 → `SmokeLog` 連携(`replay-or-stale` / `tamper`)。`receiveAudio` が束ねる。
-4. ⏳ 誤り訂正(反復 → Reed-Solomon)で再録音・圧縮耐性を上げる。
+4. ✅ 誤り訂正 = `src/ecc.js`(Reed-Solomon, 視覚担体と共有)。`renderAudioEcc` が payload+cksum を
+   RS 保護(プリアンブル 0xEC)。`extractAudio` がプレーン/ECC を自動判別し訂正、能力超過は checksum で安全拒否。
+   demo:audio の §3 で「プレーン=復元不能 / ECC=訂正」を実演。再録音同期・更なる頑健化は継続。
 5. ⏳ 心理音響マスキングで不可聴化(MPEG 聴覚モデル)= 物理層の最果て。依存が要るため別腹。
 6. ✅ デモ `examples/audio-demo.js`(発行 → WAV → 復調 → 雑音/リプレイ/鮮度切れ拒否)。`npm run demo:audio`。
 7. ⏳ 実マイク同期(前置同期・タイミング復元)。現 POC は試料整列前提の往復。

@@ -5,7 +5,7 @@
 import { writeFileSync } from 'node:fs';
 import { seal } from '../src/cord.js';
 import { SmokeLog } from '../src/smoke.js';
-import { renderAudio, extractAudio, receiveAudio, toWav, FreshnessGuard } from '../src/audio.js';
+import { renderAudio, renderAudioEcc, extractAudio, receiveAudio, toWav, FreshnessGuard } from '../src/audio.js';
 
 const ISSUER = 'demo-issuer-secret-not-real';
 const T0 = 1_717_000_000_000;
@@ -56,5 +56,19 @@ try {
 
 console.log('\n煙(ログ)        :', log.entries.length, '件 / types =', log.entries.map((e) => `${e.type}:${e.detail.verdict}`).join(', '));
 console.log('ログ整合性      :', log.verify(), '  ← 煙は消せない(柱8)');
-console.log('\n注: 不可聴化(心理音響マスキング)・ECC・実マイク同期は Phase 2+ アダプタ(メモ §5/§6)。');
+
+// --- ③ ECC: 波形が潰れても訂正して開ける(プレーン vs RS)---
+console.log('\n--- ③ 誤り訂正(Reed-Solomon)— 波形を ~1000 サンプル潰す ---');
+const damage = (arr) => { const a = Int16Array.from(arr); for (let i = 50000; i < 51000; i++) a[i] = 0; return a; };
+const g1 = new FreshnessGuard({ windowMs: 60_000 });
+try {
+  receiveAudio(damage(renderAudio(cord)), ISSUER, { guard: g1, clock: T_recv });
+  console.log('プレーン担体    : 受理(まれな一致)');
+} catch (e) {
+  console.log('プレーン担体    :', e.name, '→ 復元不能(検知のみ)');
+}
+const g2 = new FreshnessGuard({ windowMs: 60_000 });
+console.log('ECC 担体        :', receiveAudio(damage(renderAudioEcc(cord)), ISSUER, { guard: g2, clock: T_recv }), '  ← RS が訂正して復元');
+
+console.log('\n注: 不可聴化(心理音響マスキング)・実マイク同期は Phase 2+ アダプタ(メモ §5/§6)。');
 console.log('=== demo end ===');

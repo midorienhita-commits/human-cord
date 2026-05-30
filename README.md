@@ -28,13 +28,13 @@
 | **柱8 能動的発火応答** | 改ざん検知を append-only ハッシュチェーンログ(煙)に永久記録 | `src/smoke.js` |
 | **柱7 物理層出力(視覚チャネル)** | 媒体非依存フレーム codec(HC1 検知 / HC2 = Reed-Solomon 誤り訂正)+ リプレイ防止(nonce 一回性 + 鮮度窓 + 煙)。実ピクセル/QR/AI 抽出は Phase 2+ アダプタ | `src/visual.js` |
 | **柱7 物理層: 誤り訂正(ECC)** | Reed-Solomon over GF(256)(QR と同じ field, 依存ゼロ)。担体ノイズ・バースト・部分欠損を訂正。fuzz テスト済 | `src/ecc.js` |
-| **柱7 物理層出力(音響担体)** | FSK 音響 codec(+ WAV)+ リプレイ防止(視覚と共通)。「見えない著作権コード」= 鍵付き署名を音に乗せる。不可聴化/ECC/実マイク同期は Phase 2+ | `src/audio.js` |
+| **柱7 物理層出力(音響担体)** | FSK 音響 codec(+ WAV、RS 訂正フレーム)+ リプレイ防止(視覚と共通)。「見えない著作権コード」= 鍵付き署名を音に乗せる。不可聴化/実マイク同期は Phase 2+ | `src/audio.js` |
 | **柱10 失敗境界の自己観測抵抗** | 改ざん検知で露出するのは「型(seq)」のみ、核は不漏 | `src/cord.js` |
 
 柱7 はプロトコル層(担体 codec + リプレイ防止)を Phase 2 最小縦切りとして実装済で、
 **視覚(`src/visual.js`)と音響(`src/audio.js`)の 2 担体**に枝分かれする。リプレイ防止
 (FreshnessGuard / 忠実復元)は `src/freshness.js` に共通化し両担体で共有。
-誤り訂正は `src/ecc.js`(Reed-Solomon / 依存ゼロ)で実装し、視覚担体に HC2 として統合済(音響への適用は継続)。
+誤り訂正は `src/ecc.js`(Reed-Solomon / 依存ゼロ)で実装し、視覚(HC2)・音響(RS フレーム)の両担体に統合済。
 残る物理アダプタ(実ピクセル/QR/カメラ/AI 抽出、音の不可聴化=心理音響マスキング・実マイク同期)は依存を増やすため別腹で継続。
 設計は `docs/phase2-pillar7-visual-channel.md` / `docs/phase2-pillar7-audio-channel.md` を参照。
 
@@ -105,7 +105,7 @@ npm run demo:subliminal # 柱6 潜在チャネル + 柱8 煙(改ざんで煙が�
 npm run demo:visual     # 柱7 視覚チャネル(担体 codec + リプレイ防止 + 煙)
 npm run demo:audio      # 柱7 音響担体(FSK→WAV、見えない著作権コード)
 npm run demo:ecc        # 柱7 物理層の頑健化(Reed-Solomon で担体ノイズを訂正)
-npm test                # 振る舞いテスト 87 本(node --test, 依存ゼロ)
+npm test                # 振る舞いテスト 92 本(node --test, 依存ゼロ)
 ```
 
 ```js

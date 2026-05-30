@@ -18,6 +18,7 @@ import { embedSubliminal, readSubliminal } from './subliminal.js';
 import { renderEcc, extract } from './visual.js';
 import { SmokeLog, guardedOpen } from './smoke.js';
 import { signStatement, verifyStatement } from './pubkey.js';
+import { split as splitSecret, combine as combineShares } from './shard.js';
 
 function parseFacts(s) {
   try { return JSON.parse(s); } catch { return s; }
@@ -111,6 +112,31 @@ export function relate(carrierA, carrierB, issuerSecret) {
     return { ok: true, op: '+', matched: true, docId: r.docId ?? null, parts: (r.parts || []).map(parseFacts) };
   }
   return { ok: true, op: '-', matched: false, diff: r.diff };
+}
+
+/**
+ * 柱4深化 閾値発行(Shamir): 発行者秘密を n 片に分割する(本社 + 各拠点に配る想定)。
+ * @param {string} issuerSecret  発行者秘密(片割れ)
+ * @param {number} n  片数 / @param {number} k  発行に必要な閾値
+ * @returns {{x:number,y:Buffer}[]} 分散片(各保管者に 1 片ずつ)
+ */
+export function splitIssuerSecret(issuerSecret, n, k) {
+  return splitSecret(Buffer.from(String(issuerSecret)), n, k);
+}
+
+/**
+ * k 片以上を持ち寄って発行する。**単一保管者(片 < k)では正規の証明書を作れない**
+ *   = 単一拠点単独の偽造を防ぐ多者発行。
+ * 注: 本 POC は「k 片で秘密を復元してから seal」する方式(発行時に秘密が一時的に組み上がる)。
+ *   復元しない真の閾値署名(BLS 等)は将来。閾値未満では誤った秘密になり、発行者の正規秘密では
+ *   検証できない(= 偽造証明書は弾かれる)。
+ * @param {string|object} payload
+ * @param {{x:number,y:Buffer}[]} shares  持ち寄った片(k 片以上で正規)
+ * @param {object} [opts]  issue() と同じ
+ */
+export function issueWithShares(payload, shares, opts = {}) {
+  const secret = combineShares(shares).toString();
+  return issue(payload, secret, opts);
 }
 
 export { SmokeLog };

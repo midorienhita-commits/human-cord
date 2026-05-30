@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { issue, verify, relate, attest, verifyPublic, generateIssuerKeypair, FreshnessGuard, SmokeLog } from '../src/issue.js';
+import { issue, verify, relate, attest, verifyPublic, generateIssuerKeypair, splitIssuerSecret, issueWithShares, FreshnessGuard, SmokeLog } from '../src/issue.js';
 
 const SECRET = 'issuer-private-half-xyz';
 const OTHER = 'someone-elses-secret';
@@ -133,4 +133,22 @@ test('attest/verifyPublic: 採用面から使え、改ざんは弾く', () => {
   assert.equal(verifyPublic(a, publicKey).ok, true);
   a.facts = { ...FACTS, devices: 1 };
   assert.equal(verifyPublic(a, publicKey).ok, false);
+});
+
+// 柱4深化 閾値発行(Shamir)──────────────────────────────────────
+test('閾値発行: k 片(3/5)で発行 → 元の発行者秘密で検証 OK', () => {
+  const shares = splitIssuerSecret(SECRET, 5, 3);
+  const r = issueWithShares(FACTS, [shares[0], shares[2], shares[4]], { context: 'cert', docId: FACTS.docId, axes: AXES });
+  const guard = new FreshnessGuard();
+  const v = verify(r.carrier, SECRET, { guard, clock: AXES.epoch + 1000 });
+  assert.equal(v.ok, true);
+  assert.deepEqual(JSON.parse(v.payload), FACTS);
+});
+
+test('閾値発行: 閾値未満(2/5)では正規秘密で検証不能(単一拠点の偽造を防ぐ)', () => {
+  const shares = splitIssuerSecret(SECRET, 5, 3);
+  const bad = issueWithShares(FACTS, [shares[0], shares[1]], { context: 'cert', docId: FACTS.docId, axes: AXES });
+  const guard = new FreshnessGuard();
+  const v = verify(bad.carrier, SECRET, { guard, clock: AXES.epoch + 1000 });
+  assert.equal(v.ok, false); // 復元秘密が誤り → 発行者の正規秘密では開けない
 });

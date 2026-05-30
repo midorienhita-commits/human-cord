@@ -17,6 +17,7 @@ import { combine as combineTally } from './tally.js';
 import { embedSubliminal, readSubliminal } from './subliminal.js';
 import { renderEcc, extract } from './visual.js';
 import { SmokeLog, guardedOpen } from './smoke.js';
+import { signStatement, verifyStatement } from './pubkey.js';
 
 function parseFacts(s) {
   try { return JSON.parse(s); } catch { return s; }
@@ -26,11 +27,14 @@ function parseFacts(s) {
  * 発行: 本質事実(payload)を cord に封じ、堅牢な視覚担体(HC2 = ECC 付)を返す。
  * @param {string|object} payload  封じる事実(オブジェクトは JSON 化)。用途固有スキーマは採用側定義。
  * @param {string} issuerSecret    発行者秘密(柱4 片割れ。信頼境界=サーバ側にのみ存在)
- * @param {{context?:string, docId?:string|number|null, axes?:object, mark?:string|object|null}} [opts]
+ * @param {{context?:string, docId?:string|number|null, axes?:object, mark?:string|object|null,
+ *          signingKey?:string, issuedAt?:string|null}} [opts]
  *        context: 鍵列を分ける軸(例: 拠点)/ docId: 柱3 案件鍵 / mark: 柱6 発行者控え(任意)
- * @returns {{cord:object, carrier:string}} cord 本体と HC2 担体文字列(証明書に同梱する)
+ *        signingKey: 指定時、公開検証用の attestation(Ed25519 署名)も同時に生成(柱4 公開鍵層)
+ * @returns {{cord:object, carrier:string, attestation?:object}}
+ *        cord 本体 + HC2 担体(発行者媒介)。signingKey 指定時は attestation(誰でも公開鍵で検証可)も。
  */
-export function issue(payload, issuerSecret, { context = 'default', docId = null, axes, mark = null } = {}) {
+export function issue(payload, issuerSecret, { context = 'default', docId = null, axes, mark = null, signingKey = null, issuedAt = null } = {}) {
   const text = typeof payload === 'string' ? payload : JSON.stringify(payload);
   const opts = { docId };
   if (axes) opts.axes = axes;
@@ -38,7 +42,11 @@ export function issue(payload, issuerSecret, { context = 'default', docId = null
   if (mark != null) {
     cord = embedSubliminal(cord, issuerSecret, typeof mark === 'string' ? mark : JSON.stringify(mark));
   }
-  return { cord, carrier: renderEcc(cord) };
+  const out = { cord, carrier: renderEcc(cord) };
+  // 柱4 公開鍵層: 署名鍵があれば「誰でもオフライン検証できる公開証明」も併せて発行。
+  //   発行者媒介(秘密で隠す/読む)と公開検証(公開鍵で誰でも確認)を 1 回の発行で両立。
+  if (signingKey) out.attestation = signStatement(payload, signingKey, { docId, issuedAt });
+  return out;
 }
 
 /**
@@ -107,3 +115,6 @@ export function relate(carrierA, carrierB, issuerSecret) {
 
 export { SmokeLog };
 export { FreshnessGuard } from './freshness.js';
+// 柱4 公開鍵層を採用面から再 export(adopters は issue.js だけ見れば surface 完結)。
+//   attest = 公開可能な事実に発行者署名 / verifyPublic = 公開鍵だけでオフライン検証。
+export { generateIssuerKeypair, signStatement as attest, verifyStatement as verifyPublic } from './pubkey.js';

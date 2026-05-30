@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { issue, verify, relate, FreshnessGuard, SmokeLog } from '../src/issue.js';
+import { issue, verify, relate, attest, verifyPublic, generateIssuerKeypair, FreshnessGuard, SmokeLog } from '../src/issue.js';
 
 const SECRET = 'issuer-private-half-xyz';
 const OTHER = 'someone-elses-secret';
@@ -106,4 +106,31 @@ test('relate: 担体破損は media-error', () => {
   const r = relate(a, 'HC1|5|xxxx|yyyy', SECRET);
   assert.equal(r.ok, false);
   assert.equal(r.verdict, 'media-error');
+});
+
+// 公開鍵層の統合(issue に signingKey / attest / verifyPublic)──────────
+test('issue+公開鍵: signingKey 指定で発行者媒介 + 公開検証の両方を 1 回で発行', () => {
+  const { privateKey, publicKey } = generateIssuerKeypair();
+  const r = issue(FACTS, SECRET, { context: 'cert', docId: FACTS.docId, axes: AXES, signingKey: privateKey, issuedAt: '2026-05-30' });
+  // 発行者媒介(担体)は従来どおり
+  const guard = new FreshnessGuard();
+  assert.deepEqual(JSON.parse(verify(r.carrier, SECRET, { guard, clock: AXES.epoch + 1000 }).payload), FACTS);
+  // 公開検証(公開鍵だけ・秘密不要)
+  assert.ok(r.attestation);
+  const pv = verifyPublic(r.attestation, publicKey);
+  assert.equal(pv.ok, true);
+  assert.deepEqual(pv.facts, FACTS);
+});
+
+test('issue: signingKey 無しなら attestation は付かない(発行者媒介のみ)', () => {
+  const r = issue(FACTS, SECRET, { context: 'cert', docId: FACTS.docId, axes: AXES });
+  assert.equal(r.attestation, undefined);
+});
+
+test('attest/verifyPublic: 採用面から使え、改ざんは弾く', () => {
+  const { privateKey, publicKey } = generateIssuerKeypair();
+  const a = attest(FACTS, privateKey, { docId: FACTS.docId });
+  assert.equal(verifyPublic(a, publicKey).ok, true);
+  a.facts = { ...FACTS, devices: 1 };
+  assert.equal(verifyPublic(a, publicKey).ok, false);
 });

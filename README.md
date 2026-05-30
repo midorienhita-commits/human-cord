@@ -105,7 +105,8 @@ npm run demo:subliminal # 柱6 潜在チャネル + 柱8 煙(改ざんで煙が�
 npm run demo:visual     # 柱7 視覚チャネル(担体 codec + リプレイ防止 + 煙)
 npm run demo:audio      # 柱7 音響担体(FSK→WAV、見えない著作権コード)
 npm run demo:ecc        # 柱7 物理層の頑健化(Reed-Solomon で担体ノイズを訂正)
-npm test                # 振る舞いテスト 92 本(node --test, 依存ゼロ)
+npm run demo:issue      # 採用面: 発行 / 発行者媒介検証(verify は構造化結果を返す)
+npm test                # 振る舞いテスト 104 本(node --test, 依存ゼロ)
 ```
 
 ```js
@@ -178,3 +179,7 @@ Phase 0(設計文書化)完了 → **Phase 1(最小 POC)着手・本リポジト
 
 実装済み柱: 1, 2, 3, 4, 5, 6, 8, 9, 10 に加え、柱7 はプロトコル層を Phase 2 最小縦切りで実装
 (視覚 + 音響の 2 担体)。柱7 の物理アダプタ(実ピクセル/QR/ECC/AI 抽出・音の不可聴化)は継続課題。
+
+採用面(application surface): `src/issue.js` の `issue()`(発行 → HC2 担体)/ `verify()`(発行者媒介検証 →
+`{ok, verdict, payload, …}` の構造化結果)。payload は opaque(用途固有スキーマは採用側が定義)。
+Web Crypto との等価性は `test/webcrypto-compat.test.js` で実証済(サーバ側=Edge Function 等へ移植可能)。

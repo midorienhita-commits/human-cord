@@ -109,7 +109,12 @@ npm run demo:ecc        # 柱7 物理層の頑健化(Reed-Solomon で担体ノ�
 npm run demo:issue      # 採用面: 発行 / 発行者媒介検証(verify は構造化結果を返す)
 npm run demo:pubkey     # 柱4 公開鍵検証層(Ed25519、公開鍵だけでオフライン検証)
 npm test                # 振る舞いテスト 119 本(node --test, 依存ゼロ)
+# examples/verify.html をブラウザで開く → 公開検証ページ(サーバ不要・公開鍵だけで真贋確認)
 ```
+
+`examples/verify.html` は、発行者の公開鍵と attestation を貼るだけで**オフライン(サーバ非通信)**に
+真贋を確認できる静的ページ。ブラウザの Web Crypto(Ed25519)で完結し、改ざん/別発行者は弾く
+(headless Chrome で valid/tamper を検証済)。「実例を読み込む」ボタンですぐ試せる。
 
 ```js
 import { seal, open, CordTamper } from './src/cord.js';

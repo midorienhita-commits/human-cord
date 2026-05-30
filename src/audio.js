@@ -23,9 +23,9 @@
 import { createHash } from 'node:crypto';
 import { open } from './cord.js';
 import { guardedOpen } from './smoke.js';
-// 視覚チャネルと共有(将来 src/freshness.js へ括り出す候補 — メモ §7)
-import { FreshnessGuard, reviveBuffers } from './visual.js';
-export { FreshnessGuard } from './visual.js';
+// 視覚チャネルと共有する基盤(freshness.js に括り出し済 — メモ §7)
+import { FreshnessGuard, reviveBuffers } from './freshness.js';
+export { FreshnessGuard } from './freshness.js';
 
 // ── 変調パラメータ(f0/f1 は fs/N の整数倍 = 直交)───────────────
 const SAMPLE_RATE = 16000;

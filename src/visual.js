@@ -25,6 +25,11 @@
 import { createHash } from 'node:crypto';
 import { open } from './cord.js';
 import { guardedOpen } from './smoke.js';
+import { FreshnessGuard, reviveBuffers } from './freshness.js';
+
+// リプレイ防止と忠実復元は freshness.js に共通化(音響担体 audio.js と共有)。
+// 後方互換のため視覚チャネルからも従来どおり FreshnessGuard を export する。
+export { FreshnessGuard } from './freshness.js';
 
 const MAGIC = 'HC1'; // human-cord visual frame v1
 const SEP = '|';
@@ -48,21 +53,6 @@ function b64urlDecode(str) {
 }
 function checksum(buf) {
   return createHash('sha256').update(buf).digest('hex').slice(0, CKSUM_LEN);
-}
-
-// JSON 化で Buffer は {type:'Buffer',data:[…]} に化ける。物理層 codec の責務として
-// ここでバイト忠実な cord に戻す(crypto コア=既存 9 柱は無改変のまま開ける)。
-// メモ §4「既存 9 柱に触れず物理層ラッパを足す」の実装上の帰結。
-// 音響担体(audio.js)も同じ復元が要るため export(将来 freshness.js へ共通化候補)。
-export function reviveBuffers(value) {
-  if (value && typeof value === 'object') {
-    if (value.type === 'Buffer' && Array.isArray(value.data)) return Buffer.from(value.data);
-    if (Array.isArray(value)) return value.map(reviveBuffers);
-    const out = {};
-    for (const k of Object.keys(value)) out[k] = reviveBuffers(value[k]);
-    return out;
-  }
-  return value;
 }
 
 /**
@@ -113,47 +103,6 @@ export function extract(frame) {
     throw new VisualFrameError('payload is not valid cord JSON');
   }
   return reviveBuffers(cord); // バイト忠実に復元(eggs の Buffer 群を生に戻す)
-}
-
-/**
- * ② リプレイ防止ガード(プロトコル側)。
- *   - 一回性: cord.tip(seal ごとに一意な鎖先端ハッシュ)を nonce として使い、
- *             一度受理した tip の再提示を「リプレイ」として弾く。
- *   - 鮮度窓: cord.kdf.epoch(公開軸のミリ秒エポック)が now から windowMs 以内か。
- *   どちらも cord が「表に出している」公開情報だけで判定する(seal 無改造)。
- */
-export class FreshnessGuard {
-  /** @param {{windowMs?: number}} [opts] 既定 5 分。 */
-  constructor({ windowMs = 5 * 60 * 1000 } = {}) {
-    this.windowMs = windowMs;
-    this.seen = new Set(); // 受理済み tip(一回性)
-  }
-
-  /**
-   * 受理可否を判定する(状態は変えない)。
-   * @returns {{verdict:'fresh'|'replay'|'stale', reason:string}}
-   */
-  check(cord, clock) {
-    const tip = cord && cord.tip;
-    if (!tip) return { verdict: 'stale', reason: 'no tip (cannot establish one-time identity)' };
-    if (this.seen.has(tip)) return { verdict: 'replay', reason: 'tip already accepted' };
-
-    const epoch = cord.kdf && cord.kdf.epoch;
-    if (typeof epoch !== 'number') {
-      return { verdict: 'stale', reason: 'no public epoch axis (kdf.epoch)' };
-    }
-    const now = clock ?? Date.now();
-    const age = now - epoch;
-    if (age < 0 || age > this.windowMs) {
-      return { verdict: 'stale', reason: `outside freshness window (age=${age}ms)` };
-    }
-    return { verdict: 'fresh', reason: 'within window and unseen' };
-  }
-
-  /** 受理を確定し、tip を使用済みにする(以後リプレイ扱い)。 */
-  accept(cord) {
-    if (cord && cord.tip) this.seen.add(cord.tip);
-  }
 }
 
 /**

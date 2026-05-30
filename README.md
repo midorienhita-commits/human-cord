@@ -32,7 +32,7 @@
 
 柱7 はプロトコル層(担体 codec + リプレイ防止)を Phase 2 最小縦切りとして実装済で、
 **視覚(`src/visual.js`)と音響(`src/audio.js`)の 2 担体**に枝分かれする。リプレイ防止
-(FreshnessGuard / 煙)は両担体で共通。残る物理アダプタ(実ピクセル/QR/ECC/カメラ/AI 抽出、
+(FreshnessGuard / 忠実復元)は `src/freshness.js` に共通化し両担体で共有。残る物理アダプタ(実ピクセル/QR/ECC/カメラ/AI 抽出、
 音の不可聴化=心理音響マスキング・実マイク同期)は依存を増やすため別腹で継続。
 設計は `docs/phase2-pillar7-visual-channel.md` / `docs/phase2-pillar7-audio-channel.md` を参照。
 
@@ -94,6 +94,7 @@ combine(a, other, secret); // → { op:'-', matched:false, diff:{ reason:'別案
 ## 使い方
 
 ```bash
+npm run demo:e2e        # ★統合デモ: 証明書ライフサイクルで 10 柱+2担体が噛み合う通し
 npm run demo            # ひと回しデモ(発行→検証→片割れ拒否→改ざん検知)
 npm run demo:tally      # 柱3 割符演算(+ 統合 / − 差分発火)
 npm run demo:shard      # 柱4 Shamir 秘密分散(閾値未満は復元不能)
@@ -101,7 +102,7 @@ npm run demo:fuzzy      # 柱4/7 Fuzzy Extractor(手相・虹彩から安定鍵)
 npm run demo:subliminal # 柱6 潜在チャネル + 柱8 煙(改ざんで煙が立つ)
 npm run demo:visual     # 柱7 視覚チャネル(担体 codec + リプレイ防止 + 煙)
 npm run demo:audio      # 柱7 音響担体(FSK→WAV、見えない著作権コード)
-npm test                # 振る舞いテスト 68 本(node --test, 依存ゼロ)
+npm test                # 振る舞いテスト 78 本(node --test, 依存ゼロ)
 ```
 
 ```js

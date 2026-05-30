@@ -101,6 +101,15 @@ flowchart TB
 | 9 | Egg-flow architecture | AEAD + hash chain |
 | 10 | Self-observation resistance at the failure boundary | Cross-cutting. On break, only form leaks; the secret does not |
 
+### 3.4 Two Layers of Verification: Issuer-Mediated + Public
+
+human cord carries two verification modes together.
+
+- **(i) Issuer-mediated verification (symmetric core)**: Pillar 9 eggs (AEAD) + Pillar 4 issuer secret. Only the issuer can decrypt and verify; tampering is detected while the body stays hidden. The issuer-only covert channel (Pillar 6) belongs to this layer.
+- **(ii) Public verification (public-key layer, Ed25519 / RFC 8032)**: the issuer signs the "publicly disclosable facts," and **anyone can verify offline with only the issuer's public key** (no issuer secret needed). This fits cases like certificates where "the facts are public and a third party confirms authenticity."
+
+Both modes compose: a single issuance can simultaneously achieve "only the issuer hides/reads / anyone verifies authenticity." Public verification runs identically under the browser's Web Crypto, so third-party verification completes on a **static verification page without a server**. This two-layer structure lets confidentiality (issuer-mediated) and public authenticity-checking (public verification) — requirements that often conflict — be selected and combined per use case.
+
 ---
 
 ## 4. Principal Contributions
@@ -186,10 +195,10 @@ The human cord project is organized into six phases, from documenting the design
 | Phase | Exit | Status |
 |---|---|---|
 | 0 Document the foundation | Dream log + soul memo + architecture diagram + survey + this white paper | **Complete** |
-| 1 Minimal Node.js POC | A working minimal human cord | **All 10 pillars reached implementation (zero dependencies, 61 tests)** |
-| 2 Extension to the physical layer | A human cord that survives printing and photography | **Started (Pillar 7 protocol-layer POC; physical adapters ongoing)** |
+| 1 Minimal Node.js POC | A working minimal human cord | **10 pillars + public-key layer (Ed25519) + adoption API, zero dependencies, 119 tests** |
+| 2 Extension to the physical layer | A human cord that survives printing and photography | **Started (Pillar 7 visual/audio dual carriers + RS error correction; physical adapters ongoing)** |
 | 3 Concept white paper v0.2 | A 5-page bilingual specification | This document = being finalized |
-| 4 BiosGuide integration | Embedded into certificate issuance + audit logs | Not started |
+| 4 BiosGuide integration | Embedded into certificate issuance + audit logs | **Design / adoption surface / integration draft started (production rollout separate)** |
 | 5 Approach to Blancco | Begin dialogue with technical staff | Not started |
 | 6 Standardization | IACR ePrint → SCIS → international conferences → IETF/NIST → ISO/IEC | Not started |
 
@@ -274,3 +283,4 @@ The human cord project is organized into six phases, from documenting the design
 
 - 2026-05-28 Created as Phase 0 Task #6 (Japanese edition); §1–6 finalized in white-paper prose.
 - 2026-05-29 Established as an external deliverable under `docs/`. Finalized cover elements (author name and contact are placeholders to be inserted just before Phase 3 publication; the rest are fixed), updated status to current state, promoted §4.4 Pillar 7 to a Phase 2 protocol-layer POC, converted the architecture diagram to Mermaid, and expanded references from 12 to 35. English parallel edition produced.
+- 2026-05-30 Added §3.4 "Two Layers of Verification (issuer-mediated + public)" (Pillar 4 public-key layer, Ed25519 = offline third-party verification with only the public key; Web Crypto interop confirmed = serverless verification page feasible). Updated §6.1 roadmap to the current state (public-key layer, adoption API, 119 tests, Phase 4 design/draft started).

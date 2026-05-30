@@ -108,7 +108,7 @@ npm run demo:audio      # 柱7 音響担体(FSK→WAV、見えない著作権コ
 npm run demo:ecc        # 柱7 物理層の頑健化(Reed-Solomon で担体ノイズを訂正)
 npm run demo:issue      # 採用面: 発行 / 発行者媒介検証(verify は構造化結果を返す)
 npm run demo:pubkey     # 柱4 公開鍵検証層(Ed25519、公開鍵だけでオフライン検証)
-npm test                # 振る舞いテスト 117 本(node --test, 依存ゼロ)
+npm test                # 振る舞いテスト 119 本(node --test, 依存ゼロ)
 ```
 
 ```js

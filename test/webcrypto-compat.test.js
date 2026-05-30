@@ -11,9 +11,19 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, createHmac, hkdfSync, createCipheriv, createDecipheriv } from 'node:crypto';
+import {
+  createHash, createHmac, hkdfSync, createCipheriv, createDecipheriv,
+  sign as edSign, verify as edVerify, createPrivateKey, createPublicKey,
+} from 'node:crypto';
+import { generateIssuerKeypair } from '../src/pubkey.js';
 
 const subtle = globalThis.crypto.subtle;
+
+// PEM(SPKI/PKCS8)→ DER(Web Crypto importKey は DER を取る)。
+function pemToDer(pem) {
+  const b64 = pem.replace(/-----BEGIN [^-]+-----/, '').replace(/-----END [^-]+-----/, '').replace(/\s+/g, '');
+  return Buffer.from(b64, 'base64');
+}
 
 // 決定的な固定ベクトル(human cord の実使用に対応)
 const KEY = Buffer.alloc(32, 7); // 32B 鍵(AES-256 / HMAC)
@@ -84,4 +94,21 @@ test('AES-256-GCM: node:crypto で封じ Web Crypto で開く(相互運用・逆
     { name: 'AES-GCM', iv: IV, additionalData: AAD, tagLength: 128 }, k, Buffer.concat([ct, tag]),
   ));
   assert.ok(eq(pt, DATA));
+});
+
+// 柱4 公開鍵層(Ed25519)の相互運用 — node 署名 ⇄ ブラウザ Web Crypto 検証 ────────
+test('Ed25519: node:crypto 署名 → Web Crypto 検証(発行者署名をブラウザで公開検証)', async () => {
+  const { publicKey, privateKey } = generateIssuerKeypair(); // PEM
+  const sig = edSign(null, DATA, createPrivateKey(privateKey)); // サーバ(node)で署名
+  const pub = await subtle.importKey('spki', pemToDer(publicKey), { name: 'Ed25519' }, false, ['verify']);
+  const ok = await subtle.verify({ name: 'Ed25519' }, pub, sig, DATA); // ブラウザ(Web Crypto)で検証
+  assert.equal(ok, true);
+});
+
+test('Ed25519: Web Crypto 署名 → node:crypto 検証(相互運用・逆)', async () => {
+  const { publicKey, privateKey } = generateIssuerKeypair();
+  const priv = await subtle.importKey('pkcs8', pemToDer(privateKey), { name: 'Ed25519' }, false, ['sign']);
+  const sig = Buffer.from(await subtle.sign({ name: 'Ed25519' }, priv, DATA));
+  const ok = edVerify(null, DATA, createPublicKey(publicKey), sig);
+  assert.equal(ok, true);
 });

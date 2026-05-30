@@ -13,6 +13,7 @@
     "demo:visual": "node examples/visual-demo.js",
     "demo:audio": "node examples/audio-demo.js",
     "demo:e2e": "node examples/e2e-demo.js",
+    "demo:ecc": "node examples/ecc-demo.js",
     "test": "node --test"
   },
   "engines": {

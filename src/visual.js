@@ -26,14 +26,17 @@ import { createHash } from 'node:crypto';
 import { open } from './cord.js';
 import { guardedOpen } from './smoke.js';
 import { FreshnessGuard, reviveBuffers } from './freshness.js';
+import { encodeBlocks, decodeBlocks, RsError } from './ecc.js';
 
 // リプレイ防止と忠実復元は freshness.js に共通化(音響担体 audio.js と共有)。
 // 後方互換のため視覚チャネルからも従来どおり FreshnessGuard を export する。
 export { FreshnessGuard } from './freshness.js';
 
-const MAGIC = 'HC1'; // human-cord visual frame v1
+const MAGIC = 'HC1'; // human-cord visual frame v1(検知のみ)
+const MAGIC_ECC = 'HC2'; // v2: Reed-Solomon 誤り訂正つき(物理層の頑健化)
 const SEP = '|';
 const CKSUM_LEN = 12; // sha256 先頭 12 hex を整合性チェックに使う
+const ECC = { nsym: 32, k: 223 }; // 255 ブロック / 16 誤り訂正/ブロック(HC2 既定)
 
 /** 担体の読み取り破損(光学ノイズ・改ざんで枠が壊れた)を表す例外。 */
 export class VisualFrameError extends Error {
@@ -71,9 +74,35 @@ export function render(cord) {
 }
 
 /**
- * ① extract: 視覚担体 → cord。枠・長さ・チェックサムを検証して復元する。
- *   AI の目が復元した「読み取り結果の文字列」を受け取り、約束(cord)に戻す役。
- *   破損していれば VisualFrameError(復号より手前で弾く＝媒体エラーと改ざんを分離)。
+ * ① renderEcc: render の頑健版。payload を Reed-Solomon で符号化してから担体化する。
+ *   形式: HC2|<eccバイト長>|<元payloadのsha256先頭12>|<base64url(RS符号化バイト)>
+ *   実世界の雑音・部分欠損・再圧縮で base64 が一部化けても、extract が訂正して復元する。
+ *   checksum は「元 payload」に対して取り、RS 訂正後に厳密一致を確認する。
+ * @param {object} cord
+ * @returns {string}
+ */
+export function renderEcc(cord) {
+  const payload = Buffer.from(JSON.stringify(cord), 'utf8');
+  const ecc = encodeBlocks(payload, ECC);
+  return [MAGIC_ECC, String(ecc.length), checksum(payload), b64urlEncode(ecc)].join(SEP);
+}
+
+// payload バイト列(訂正済み)→ cord。JSON 解析 + バイト忠実復元。
+function payloadToCord(payload) {
+  let cord;
+  try {
+    cord = JSON.parse(payload.toString('utf8'));
+  } catch {
+    throw new VisualFrameError('payload is not valid cord JSON');
+  }
+  return reviveBuffers(cord); // eggs の Buffer 群を生に戻す
+}
+
+/**
+ * ① extract: 視覚担体 → cord。HC1(検知のみ)/ HC2(RS 訂正つき)の両方を自動判別する。
+ *   - HC1: 長さ + checksum で破損を「検知」し、壊れていれば VisualFrameError。
+ *   - HC2: RS で誤りを「訂正」してから checksum を確認(能力内なら担体が一部化けても復元)。
+ *   いずれも復号より手前で媒体エラーを分離する(改ざん=AEAD とは別ドメイン)。
  * @param {string} frame
  * @returns {object} cord
  */
@@ -82,27 +111,38 @@ export function extract(frame) {
   const parts = frame.split(SEP);
   if (parts.length !== 4) throw new VisualFrameError('malformed frame (field count)');
   const [magic, lenStr, cksum, b64] = parts;
-  if (magic !== MAGIC) throw new VisualFrameError(`unknown magic: ${magic}`);
+  if (magic !== MAGIC && magic !== MAGIC_ECC) throw new VisualFrameError(`unknown magic: ${magic}`);
 
-  let payload;
+  let bytes;
   try {
-    payload = b64urlDecode(b64);
+    bytes = b64urlDecode(b64);
   } catch {
     throw new VisualFrameError('base64url decode failed');
   }
-  if (payload.length !== Number(lenStr)) {
+  if (bytes.length !== Number(lenStr)) {
     throw new VisualFrameError('length mismatch (truncated/garbled read)');
   }
-  if (checksum(payload) !== cksum) {
+
+  if (magic === MAGIC_ECC) {
+    // HC2: まず RS で訂正してから checksum を確認。
+    let payload;
+    try {
+      payload = decodeBlocks(bytes, ECC).data;
+    } catch (e) {
+      if (e instanceof RsError) throw new VisualFrameError(`ECC uncorrectable: ${e.message}`);
+      throw e;
+    }
+    if (checksum(payload) !== cksum) {
+      throw new VisualFrameError('checksum mismatch after ECC (beyond correction capacity)');
+    }
+    return payloadToCord(payload);
+  }
+
+  // HC1: 検知のみ。
+  if (checksum(bytes) !== cksum) {
     throw new VisualFrameError('checksum mismatch (optical noise / tamper)');
   }
-  let cord;
-  try {
-    cord = JSON.parse(payload.toString('utf8'));
-  } catch {
-    throw new VisualFrameError('payload is not valid cord JSON');
-  }
-  return reviveBuffers(cord); // バイト忠実に復元(eggs の Buffer 群を生に戻す)
+  return payloadToCord(bytes);
 }
 
 /**

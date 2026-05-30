@@ -114,7 +114,10 @@ L1 が人間向け、L3 が機械向け、L2 が発行者専用。**3 つの読�
 3. ✅ リプレイ検知 → `SmokeLog` 連携(`replay-or-stale` イベント型)。`FreshnessGuard` + `receiveVisual`。
 4. ⏳ 担体の風景層(L1)/潜在層(L2)を AI 抽出に耐える形へ(QR → 有機担体は最後)。
 5. ✅ デモ `examples/visual-demo.js`(発行 → 担体化 → ノイズ検知 → リプレイ/鮮度切れ拒否)。
-6. ⏳ ECC(誤り訂正)・実カメラ/AI 抽出アダプタ = 物理層の最果て(依存が要るため別腹)。
+6. ✅ ECC(誤り訂正)= `src/ecc.js`(Reed-Solomon over GF(256), 依存ゼロ, fuzz 済)。
+   視覚担体に **HC2** として統合(`renderEcc`、`extract` が HC1 検知 / HC2 訂正を自動判別)。
+   担体ノイズ・バースト・部分欠損を訂正し、能力超過は checksum で安全に拒否。デモ `examples/ecc-demo.js`。
+   音響担体(audio.js)への適用と、実カメラ/AI 抽出アダプタは継続(依存が要るため別腹)。
 
 > **副産物の発見(2026-05-29):** 視覚チャネルが**初の実 JSON 輸送経路**になり、
 > `egg.js` の `hashEgg`/`openEgg` が JSON 復元後の `{type:'Buffer'}` を吸収しない潜在バグを露出

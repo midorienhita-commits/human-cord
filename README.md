@@ -24,6 +24,7 @@
 | **柱4 発行者の片割れ** | 発行者秘密が無いとコードブック・通行手形を再現不能 | `src/cord.js` |
 | **柱4深化 割符の情報理論的分割** | Shamir 秘密分散(GF256)。閾値未満は計算無限でも復元不能 | `src/shard.js` |
 | **柱4/7 人間の曖昧さを鍵源に** | Fuzzy Extractor。手相・虹彩から誤り訂正で安定鍵を再生(生体は保存しない) | `src/fuzzy.js` |
+| **柱4 公開鍵検証層(Ed25519)** | 公開可能な事実に発行者署名 → 公開鍵だけでオフライン第三者検証(秘密不要)。対称コアの相補 | `src/pubkey.js` |
 | **柱6 潜在チャネル** | 発行者だけが読める裏メッセージ(Simmons subliminal channel) | `src/subliminal.js` |
 | **柱8 能動的発火応答** | 改ざん検知を append-only ハッシュチェーンログ(煙)に永久記録 | `src/smoke.js` |
 | **柱7 物理層出力(視覚チャネル)** | 媒体非依存フレーム codec(HC1 検知 / HC2 = Reed-Solomon 誤り訂正)+ リプレイ防止(nonce 一回性 + 鮮度窓 + 煙)。実ピクセル/QR/AI 抽出は Phase 2+ アダプタ | `src/visual.js` |
@@ -106,7 +107,8 @@ npm run demo:visual     # 柱7 視覚チャネル(担体 codec + リプレイ防
 npm run demo:audio      # 柱7 音響担体(FSK→WAV、見えない著作権コード)
 npm run demo:ecc        # 柱7 物理層の頑健化(Reed-Solomon で担体ノイズを訂正)
 npm run demo:issue      # 採用面: 発行 / 発行者媒介検証(verify は構造化結果を返す)
-npm test                # 振る舞いテスト 108 本(node --test, 依存ゼロ)
+npm run demo:pubkey     # 柱4 公開鍵検証層(Ed25519、公開鍵だけでオフライン検証)
+npm test                # 振る舞いテスト 114 本(node --test, 依存ゼロ)
 ```
 
 ```js

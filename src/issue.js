@@ -13,9 +13,14 @@
 //     JSON で応答できる(発行者媒介検証 = 信頼境界=サーバ側で実行する前提)。
 
 import { seal, open, CordTamper } from './cord.js';
+import { combine as combineTally } from './tally.js';
 import { embedSubliminal, readSubliminal } from './subliminal.js';
 import { renderEcc, extract } from './visual.js';
 import { SmokeLog, guardedOpen } from './smoke.js';
+
+function parseFacts(s) {
+  try { return JSON.parse(s); } catch { return s; }
+}
 
 /**
  * 発行: 本質事実(payload)を cord に封じ、堅牢な視覚担体(HC2 = ECC 付)を返す。
@@ -73,6 +78,31 @@ export function verify(carrierOrCord, issuerSecret, { guard, smokeLog, clock } =
     if (e instanceof CordTamper) return { ok: false, verdict: 'tamper', seq: e.seq };
     throw e;
   }
+}
+
+/**
+ * 柱3 案件内関連付け: 同一案件(docId)の 2 証明書を発行者媒介で突き合わせる。
+ *   - matched(+): 同一発行者・同一案件 → 両者の本質事実を併せて提示できる。
+ *   - unmatched(-): 別案件 / 別発行者 / 改ざん → 「どう違うか」(diff)を返す。
+ * 発行者秘密が要る(発行者媒介)。担体破損は media-error。
+ * @param {string|object} carrierA  HC2 担体 or cord
+ * @param {string|object} carrierB
+ * @param {string} issuerSecret
+ * @returns {{ok:boolean, op?:'+'|'-', matched?:boolean, docId?:string|number|null, parts?:any[], diff?:object, verdict?:string, reason?:string}}
+ */
+export function relate(carrierA, carrierB, issuerSecret) {
+  let a, b;
+  try {
+    a = typeof carrierA === 'string' ? extract(carrierA) : carrierA;
+    b = typeof carrierB === 'string' ? extract(carrierB) : carrierB;
+  } catch (e) {
+    return { ok: false, verdict: 'media-error', reason: e.message };
+  }
+  const r = combineTally(a, b, issuerSecret); // 柱3 割符演算(+/-)
+  if (r.op === '+') {
+    return { ok: true, op: '+', matched: true, docId: r.docId ?? null, parts: (r.parts || []).map(parseFacts) };
+  }
+  return { ok: true, op: '-', matched: false, diff: r.diff };
 }
 
 export { SmokeLog };

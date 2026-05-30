@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { issue, verify, FreshnessGuard, SmokeLog } from '../src/issue.js';
+import { issue, verify, relate, FreshnessGuard, SmokeLog } from '../src/issue.js';
 
 const SECRET = 'issuer-private-half-xyz';
 const OTHER = 'someone-elses-secret';
@@ -71,4 +71,39 @@ test('検証: 本体改ざんは tamper + 煙(媒体は正常)', () => {
   assert.equal(r.ok, false);
   assert.equal(r.verdict, 'tamper');
   assert.equal(log.entries[0].type, 'tamper');
+});
+
+// 柱3 案件内関連付け(relate)─────────────────────────────────────
+test('relate: 同一案件(docId)・同一発行者は + で統合(両者の事実を返す)', () => {
+  const A = { docId: 'CASE-1', step: '消去', method: 'Blancco' };
+  const B = { docId: 'CASE-1', step: '破砕', method: '物理' };
+  const a = issue(A, SECRET, { context: 'cert', docId: 'CASE-1', axes: AXES }).carrier;
+  const b = issue(B, SECRET, { context: 'cert', docId: 'CASE-1', axes: AXES }).carrier;
+  const r = relate(a, b, SECRET);
+  assert.equal(r.ok, true);
+  assert.equal(r.op, '+');
+  assert.equal(r.matched, true);
+  assert.deepEqual(r.parts, [A, B]);
+});
+
+test('relate: 別案件(docId 不一致)は - で差分発火', () => {
+  const a = issue({ docId: 'CASE-1' }, SECRET, { context: 'cert', docId: 'CASE-1', axes: AXES }).carrier;
+  const b = issue({ docId: 'CASE-9' }, SECRET, { context: 'cert', docId: 'CASE-9', axes: AXES }).carrier;
+  const r = relate(a, b, SECRET);
+  assert.equal(r.op, '-');
+  assert.equal(r.matched, false);
+});
+
+test('relate: 別発行者は - で差分発火(通行手形が噛み合わない)', () => {
+  const a = issue({ docId: 'CASE-1' }, SECRET, { context: 'cert', docId: 'CASE-1', axes: AXES }).carrier;
+  const b = issue({ docId: 'CASE-1' }, SECRET, { context: 'cert', docId: 'CASE-1', axes: AXES }).carrier;
+  const r = relate(a, b, OTHER); // 別秘密で突き合わせ
+  assert.equal(r.matched, false);
+});
+
+test('relate: 担体破損は media-error', () => {
+  const a = issue({ docId: 'CASE-1' }, SECRET, { context: 'cert', docId: 'CASE-1', axes: AXES }).carrier;
+  const r = relate(a, 'HC1|5|xxxx|yyyy', SECRET);
+  assert.equal(r.ok, false);
+  assert.equal(r.verdict, 'media-error');
 });

@@ -110,6 +110,19 @@ human cord carries two verification modes together.
 
 Both modes compose: a single issuance can simultaneously achieve "only the issuer hides/reads / anyone verifies authenticity." Public verification runs identically under the browser's Web Crypto, so third-party verification completes on a **static verification page without a server**. This two-layer structure lets confidentiality (issuer-mediated) and public authenticity-checking (public verification) — requirements that often conflict — be selected and combined per use case.
 
+### 3.5 Layering Toward Standardization: Core and Extensions
+
+The ten pillars are a conceptual map of the whole design, but they are not uniform from a standardization or implementation standpoint. Taking each pillar through a "threat → mechanism → property" teardown sorts them, by where the guarantee lives and how mature it is, into the following four layers. This layering exists to frame standardization realistically as a **minimal core → public verification → extensions** staged process, rather than a single adoption of all ten pillars (§6.2).
+
+| Layer | Pillars included | Positioning |
+|---|---|---|
+| **(I) Symmetric issuing core (minimal kernel)** | 1 key derivation + 9 AEAD chain + 5 key advance + 10 minimal disclosure | An inseparable single seal/open core (`cord.js`/`egg.js`). Standardization targets this minimal kernel first |
+| **(II) Public-verification layer** | The public-key layer of Pillar 4 (Ed25519 / RFC 8032) | The natural fit for long-lived, public, repeatedly verified documents (certificates, etc.). §3.4(ii) |
+| **(III) Distinctive value (extensions of the core)** | 3 confidential matching / 4 threshold issuance (Shamir) / 7 carrier codec (Reed-Solomon physical transport) | Differentiating features that public-key signing alone cannot provide |
+| **(IV) Future extensions, cross-cutting principle, operational conventions** | 4 Fuzzy Extractor · 6 Subliminal · 7 replay prevention (use-case-dependent future extensions) / 10 (a design principle imposed across the whole pipeline = an invariant, not a standalone feature) / 8 smoke (recording into a tamper-evident audit log = an operational convention an adopter's existing audit infrastructure can absorb) / 2 landscape blending (a verification-independent display layer) | Standardized and implemented incrementally per use case and maturity |
+
+The key point is that layers (I)–(III) constitute the **substantive core of the specification (roughly five functions)**, while layer (IV) separates into "future extensions," "a principle imposed on the whole," "operational conventions," and "a display layer." This does not remove any of the ten pillars; it **clarifies the order and granularity in which they are written as a specification**. The ten pillars as a conceptual map (the metaphor ↔ cryptographic-engineering correspondence in Appendix A) are preserved as is.
+
 ---
 
 ## 4. Principal Contributions
@@ -212,7 +225,9 @@ The human cord project is organized into six phases, from documenting the design
 | ISO/IEC 27002 annex | Whole-system operational guidance | 3–5 years |
 | IETF RFC (via IRTF CFRG) | Individual specs for Pillars 5, 6, 8 | 2–4 years |
 
-**Shortest route**: IRTF CFRG → IETF RFC → ISO adoption
+Standardization proceeds in stages along the layers of §3.5: first propose layer (I), the symmetric issuing core (Pillars 1/5/9/10), to the CFRG as the minimal kernel; then layer (II), the public-verification layer (profiling the existing Ed25519 / RFC 8032 standard); then stack layer (III), the distinctive value (Pillar 3 / Pillar 4 threshold / Pillar 7 carrier), as extension specifications. Layer (IV) is deferred as future extensions and operational guidance (the ISO/IEC 27002 annex).
+
+**Shortest route**: IRTF CFRG (layer I core) → IETF RFC → ISO adoption (extending through layer III in stages)
 
 ---
 
@@ -284,3 +299,4 @@ The human cord project is organized into six phases, from documenting the design
 - 2026-05-28 Created as Phase 0 Task #6 (Japanese edition); §1–6 finalized in white-paper prose.
 - 2026-05-29 Established as an external deliverable under `docs/`. Finalized cover elements (author name and contact are placeholders to be inserted just before Phase 3 publication; the rest are fixed), updated status to current state, promoted §4.4 Pillar 7 to a Phase 2 protocol-layer POC, converted the architecture diagram to Mermaid, and expanded references from 12 to 35. English parallel edition produced.
 - 2026-05-30 Added §3.4 "Two Layers of Verification (issuer-mediated + public)" (Pillar 4 public-key layer, Ed25519 = offline third-party verification with only the public key; Web Crypto interop confirmed = serverless verification page feasible). Updated §6.1 roadmap to the current state (public-key layer, adoption API, 119 tests, Phase 4 design/draft started).
+- 2026-05-30 Added §3.5 "Layering Toward Standardization: Core and Extensions." A threat→mechanism→property teardown of the ten pillars sorts them into four layers: (I) symmetric issuing core / (II) public-verification layer / (III) distinctive value / (IV) future extensions, cross-cutting principle, and operational conventions (the substantive specification core is roughly five functions). Reframed the §6.2 standardization targets as a staged process along these layers (the ten-pillar conceptual map = Appendix A is preserved).

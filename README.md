@@ -112,9 +112,10 @@ npm test                # 振る舞いテスト 121 本(node --test, 依存ゼ�
 # examples/verify.html をブラウザで開く → 公開検証ページ(サーバ不要・公開鍵だけで真贋確認)
 ```
 
-`examples/verify.html` は、発行者の公開鍵と attestation を貼るだけで**オフライン(サーバ非通信)**に
-真贋を確認できる静的ページ。ブラウザの Web Crypto(Ed25519)で完結し、改ざん/別発行者は弾く
-(headless Chrome で valid/tamper を検証済)。「実例を読み込む」ボタンですぐ試せる。
+`examples/verify.html` は、発行者の公開鍵だけで**オフライン(サーバ非通信)**に真贋を確認できる静的ページ。
+ブラウザの Web Crypto(Ed25519)で完結し、改ざん/別発行者は弾く。**開いた瞬間に実例(消去証明書を模した事実)を
+自動検証して緑表示**し、**「⚠ 改ざんしてみる」ボタンで数値を1つ書き換える**と署名が一致せず即座に赤(検証失敗)になる
+=改ざん検知を 30 秒で体感できるキラーデモ。秘密鍵は非掲載。headless 用に `?autotest=valid` / `?autotest=tamper`。
 
 ```js
 import { seal, open, CordTamper } from './src/cord.js';

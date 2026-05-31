@@ -116,6 +116,7 @@ npm run demo:e2e        # ★統合デモ: 証明書ライフサイクルで 10 
 npm run demo            # ひと回しデモ(発行→検証→片割れ拒否→改ざん検知)
 npm run demo:tally      # 柱3 割符演算(+ 統合 / − 差分発火)
 npm run demo:shard      # 柱4 Shamir 秘密分散(閾値未満は復元不能)
+npm run demo:threshold  # 柱4 閾値発行: 単一拠点では偽造不可=計算非依存の「変えられない根」
 npm run demo:fuzzy      # 柱4/7 Fuzzy Extractor(手相・虹彩から安定鍵)
 npm run demo:subliminal # 柱6 潜在チャネル + 柱8 煙(改ざんで煙が立つ)
 npm run demo:visual     # 柱7 視覚チャネル(担体 codec + リプレイ防止 + 煙)

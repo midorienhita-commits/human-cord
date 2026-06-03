@@ -96,7 +96,7 @@ function pngChunk(type, data) {
 }
 
 /** 8bit グレースケール画素(長さ w*h の Buffer)を実 PNG バイト列へ。 */
-function encodePng(pixels, w, h) {
+export function encodePng(pixels, w, h) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0);
   ihdr.writeUInt32BE(h, 4);
@@ -118,7 +118,7 @@ function encodePng(pixels, w, h) {
 }
 
 /** PNG バイト列 → {w,h,pixels}。本モジュールが書いた形式(8bit グレー/フィルタ0)専用。 */
-function decodePng(buf) {
+export function decodePng(buf) {
   if (buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIG)) {
     throw new ImageCarrierError('not a PNG (bad signature)');
   }
@@ -241,13 +241,13 @@ function parseHeader(bytes) {
 }
 
 /**
- * renderImage: cord → 実 PNG 画像(視覚物理担体)。
- *   payload(JSON) を HC2 と同じ RS で符号化し、ヘッダ+本体を 2 値モジュール格子へ並べ、
- *   実 PNG として返す。返り値の png はそのままファイルに書け、画面表示・印刷・撮影できる。
- * @param {object} cord  seal()/issue() の出力
- * @returns {{png:Buffer, modules:number, side:number}} png=画像バイト, modules=N, side=画素辺長
+ * cordToMatrix: cord → 2 値モジュール格子(描画前の論理担体)。
+ *   payload(JSON) を HC2 と同じ RS で符号化 → ヘッダ + インターリーブ本体 → ビット列 → 正方格子。
+ *   描画(ピクセル化)から独立させ、視覚カメラアダプタ(photo.js)からも再利用する。
+ * @param {object} cord
+ * @returns {{matrix:Uint8Array, n:number}} matrix=長さ n*n の 0/1 ビット(行優先・MSB先頭)
  */
-export function renderImage(cord) {
+export function cordToMatrix(cord) {
   const payload = Buffer.from(JSON.stringify(cord), 'utf8');
   const rs = encodeBlocks(payload); // HC2 と同一の誤り訂正
   const stream = Buffer.concat([buildHeader(rs.length), interleave(rs)]); // 本体はインターリーブして配置
@@ -255,19 +255,16 @@ export function renderImage(cord) {
   const n = Math.ceil(Math.sqrt(bits.length)); // 正方格子に収める
   const matrix = new Uint8Array(n * n); // 余りは 0(白)で自然にパディング
   matrix.set(bits);
-  const { pixels, side } = matrixToPixels(matrix, n);
-  return { png: encodePng(pixels, side, side), modules: n, side };
+  return { matrix, n };
 }
 
 /**
- * extractImage: 実 PNG 画像 → cord。光学ノイズで一部モジュールが化けても RS が訂正する。
- *   手順: PNG 復号 → モジュール中心サンプリング → ヘッダ RS → 本体 RS(decodeBlocks)→ cord。
- * @param {Buffer} png
+ * matrixToCord: 2 値モジュール格子(0/1 ビット列)→ cord。RS が訂正能力内の誤りを直す。
+ *   サンプリング手段(固定幾何 or カメラ補正)に依らず、ビット格子からの復号を共通化する。
+ * @param {Uint8Array|number[]} bits  行優先・MSB先頭の 0/1 列(長さは 8 の倍数でなくてよい)
  * @returns {object} cord
  */
-export function extractImage(png) {
-  const { w, h, pixels } = decodePng(png);
-  const bits = pixelsToBits(pixels, w, h);
+export function matrixToCord(bits) {
   const bytes = bitsToBytes(bits);
   const rsLen = parseHeader(bytes);
   const start = HEADER_LEN;
@@ -289,11 +286,35 @@ export function extractImage(png) {
   return reviveBuffers(cord);
 }
 
+/**
+ * renderImage: cord → 実 PNG 画像(視覚物理担体・既知幾何版)。
+ *   返り値の png はそのままファイルに書け、画面表示・印刷・撮影できる。
+ *   位置・回転・傾きが未知の「写真」から読むには photo.js(finder + 透視補正)を使う。
+ * @param {object} cord  seal()/issue() の出力
+ * @returns {{png:Buffer, modules:number, side:number}} png=画像バイト, modules=N, side=画素辺長
+ */
+export function renderImage(cord) {
+  const { matrix, n } = cordToMatrix(cord);
+  const { pixels, side } = matrixToPixels(matrix, n);
+  return { png: encodePng(pixels, side, side), modules: n, side };
+}
+
+/**
+ * extractImage: 実 PNG 画像(既知幾何)→ cord。光学ノイズは RS が訂正する。
+ *   モジュールが軸整列・固定尺で並ぶ前提(renderImage の出力)。写真は photo.scanPhoto。
+ * @param {Buffer} png
+ * @returns {object} cord
+ */
+export function extractImage(png) {
+  const { w, h, pixels } = decodePng(png);
+  return matrixToCord(pixelsToBits(pixels, w, h));
+}
+
 // ── 光学ノイズのシミュレーション(実カメラ前の研究用)──────────────
 // 実カメラ/AI 抽出アダプタは別腹(依存が要る)。ここでは「撮影で起きる劣化」を
 // 画素レベルで模す: ぼけ・露出ずれ・塩胡椒ノイズ・部分遮蔽(影・指・反射)。
 // 決定的に再現するため簡易 PRNG(mulberry32)を使う(テスト安定性のため)。
-function mulberry32(seed) {
+export function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
     a |= 0;
@@ -304,7 +325,7 @@ function mulberry32(seed) {
   };
 }
 
-function boxBlur(pixels, w, h, radius) {
+export function boxBlur(pixels, w, h, radius) {
   if (radius <= 0) return pixels;
   const out = Buffer.alloc(w * h);
   for (let y = 0; y < h; y++) {

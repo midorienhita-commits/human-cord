@@ -114,6 +114,98 @@ export function relate(carrierA, carrierB, issuerSecret) {
   return { ok: true, op: '-', matched: false, diff: r.diff };
 }
 
+// 相同領域 = 全姉妹で (key,value) が一致するフィールド(JSON 等値で判定)。
+//   生物の「相同配列」= 鋳型として使える共通部分。ここが案件レベルの事実(再建可能な真実)。
+function homologousRegion(factsList) {
+  if (factsList.length === 0) return {};
+  const first = factsList[0];
+  const out = {};
+  for (const k of Object.keys(first)) {
+    const v = JSON.stringify(first[k]);
+    if (factsList.every((o) => o && JSON.stringify(o[k]) === v)) out[k] = first[k];
+  }
+  return out;
+}
+// 姉妹間で値が分かれるフィールド(= 文書固有・非相同。鋳型では再建できない)。
+function variableRegion(factsList) {
+  const keys = new Set();
+  for (const o of factsList) for (const k of Object.keys(o || {})) keys.add(k);
+  const out = {};
+  for (const k of keys) {
+    const vals = factsList.map((o) => (o ? o[k] : undefined));
+    if (new Set(vals.map((v) => JSON.stringify(v))).size > 1) out[k] = vals;
+  }
+  return out;
+}
+
+/**
+ * 柱3 相同組換え修復(reconstructCase): 同一案件(docId)の複数担体を相互の冗長コピーとみなし、
+ *   一部が破損(RS 訂正能力超過 / 改ざん)しても、**無傷の姉妹を鋳型に案件の本質事実を再建**する。
+ *   設計の種: docs/seed-bio-analogies.md §1(相同組換え修復)。
+ *
+ * 生物の写し: 二本鎖切断を相同な姉妹染色体を鋳型に再建する。共通(相同)領域だけが再建可能で、
+ *   非相同(文書固有のフィールド)は鋳型に無いので復元できない(正直な限界)。
+ *
+ * セマンティクス:
+ *   - 各担体を発行者媒介 verify。intact(ok)と damaged(media-error/tamper)に分ける。
+ *   - intact を docId でグループ化し、対象案件(指定 docId or 最多数の案件)を選ぶ。
+ *   - **相同領域** = その案件の intact 姉妹すべてで一致する (key,value) = 再建された案件の真実
+ *     (複数姉妹が corroborate=相互検証する)。値が分かれるキーは variable(文書固有)として報告。
+ *   - **非相同**(intact だが別 docId)= foreign として排除(別案件 / 取り違え検知)。
+ *   - 無傷の姉妹が 1 枚も無ければ ok:false(案件のコピーが全滅=再建不能)。
+ *
+ * @param {(string|object)[]} carriers  HC2 担体 or cord の配列(同一案件と想定して持ち寄る)
+ * @param {string} issuerSecret
+ * @param {{docId?:string|number|null, ctx?:object}} [opts] docId: 対象案件を明示 / ctx: verify の guard/smokeLog/clock
+ * @returns {{ok:boolean, docId:any, recovered?:object, corroboration?:number, repaired?:object[],
+ *            foreign?:object[], variable?:object, damaged?:object[], reason?:string}}
+ */
+export function reconstructCase(carriers, issuerSecret, { docId = null, ctx = {} } = {}) {
+  const results = carriers.map((c, i) => ({ i, ...verify(c, issuerSecret, ctx) }));
+  const damaged = results.filter((r) => !r.ok).map((r) => ({ index: r.i, verdict: r.verdict, reason: r.reason, seq: r.seq }));
+  const intact = results.filter((r) => r.ok);
+
+  // 対象案件: 明示 docId、無ければ intact 中で最多数の docId。
+  let target = docId;
+  if (target == null) {
+    const counts = new Map();
+    for (const r of intact) counts.set(String(r.docId), (counts.get(String(r.docId)) || 0) + 1);
+    let best = -1;
+    for (const r of intact) {
+      const c = counts.get(String(r.docId));
+      if (c > best) { best = c; target = r.docId; }
+    }
+  }
+
+  const siblings = intact.filter((r) => String(r.docId) === String(target));
+  const foreign = intact
+    .filter((r) => String(r.docId) !== String(target))
+    .map((r) => ({ index: r.i, docId: r.docId ?? null }));
+
+  if (siblings.length === 0) {
+    return { ok: false, docId: target ?? null, reason: '無傷の姉妹が無い(案件のコピーが全滅=再建不能)', damaged, foreign };
+  }
+
+  // facts を比較可能な形に正規化: verify の payload は JSON 文字列なので parse(relate と同じ)。
+  //   オブジェクトは相同/非相同をフィールド単位で比較。非オブジェクトは {value} に包む。
+  const factsList = siblings.map((s) => {
+    const f = parseFacts(s.payload);
+    return f && typeof f === 'object' && !Array.isArray(f) ? f : { value: f };
+  });
+  const recovered = homologousRegion(factsList);
+  const variable = variableRegion(factsList);
+
+  return {
+    ok: true,
+    docId: target ?? null,
+    recovered,                 // 相同領域 = 再建された案件の本質事実(無傷姉妹が鋳型)
+    corroboration: siblings.length, // 何枚の姉妹が相互検証したか(鋳型の重複度)
+    repaired: damaged,         // 破損担体: 相同領域は鋳型から再建/被覆。固有フィールドは喪失(非相同)
+    foreign,                   // 非相同(別案件)= 排除した担体
+    variable,                  // 姉妹間で分かれる文書固有フィールド
+  };
+}
+
 /**
  * 柱4深化 閾値発行(Shamir): 発行者秘密を n 片に分割する(本社 + 各拠点に配る想定)。
  * @param {string} issuerSecret  発行者秘密(片割れ)

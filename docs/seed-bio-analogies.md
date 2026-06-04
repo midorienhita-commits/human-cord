@@ -30,7 +30,7 @@
   「鎖間修復(相同組換え)」の二段構えに対応。
 - 注意: 修復は「目」の操作。再建後も各担体の AEAD(柱9)/発行者検査(柱4)は独立に効く(約束は不変)。
 
-## 2. 動画フレーム ratchet = テロメア(不可逆な世代計数)
+## 2. 動画フレーム ratchet = テロメア(不可逆な世代計数)  ✅ 実装済(2026-06-04)
 
 **生物**: テロメアは複製のたび短縮し、Hayflick 限界で分裂を止める。
 **複製回数を物理的に使い切る**内蔵カウンタ(無制限なコピーを禁じる)。
@@ -40,6 +40,16 @@
 - 録画して後で再生(リプレイ)しても、鎖はすでに「短く」なっており **使い切られた世代**として弾く。
 - 「生きた担体」= 複製のたび不可逆に状態が進む = テロメアの一方向性。柱8 煙で「使い切り済みの再提示」を上げる。
 - これは**チャネル(その場限り)用**。長期保存文書(証明書)には鮮度窓を当てない既存方針と矛盾しない。
+
+**実装 = `src/livecord.js`(依存ゼロ・`npm run demo:live`・test/livecord.test.js 9 本)**:
+- `emitLive(message, secret, ctx, {startEpoch, frameMs, length})` → フレーム鎖(各フレーム=1 cord、平文に `{seq, prev=前フレーム tip}` を封入)。`length` = テロメア予算。
+- `LiveVerifier(secret, {windowMs, length}).feed(frame, clock)` → 構造化 verdict(throw しない):
+  `live` / `stale`(鮮度失効=後日再生)/ `spliced`(prev 鎖断裂=別録画接ぎ木)/ `reorder`(seq 不連続)/
+  `tamper`(AEAD=改ざん/別発行者)/ `replay`(同一 tip 再提示)/ `exhausted`(予算超過)。
+- **要(なぜ epoch を freshen できないか)**: `epoch` は公開軸だが `deriveCodebook` の salt に effく → 書き換えると
+  codebook が変わり ratchet 鍵列が変わって AEAD が割れる(open が throw)。**epoch は実質 ciphertext に束縛**。
+- **正直な限界**: 非対話では「鮮度窓内・別の検証者への即時リプレイ」は原理的に防げない(窓を frameMs 数個に
+  絞れば実用上ほぼ封じる)。厳密な liveness はチャレンジ応答(検証者 nonce をその場で取り込む対話)= 将来課題。
 
 ## 3. 二重らせんの「ひねり」= 視覚担体の構造モチーフ ★着目点
 

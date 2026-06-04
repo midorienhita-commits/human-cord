@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { seal, open, CordTamper } from '../src/cord.js';
 import { renderScannable, simulatePhoto, scanPhoto, PhotoError } from '../src/photo.js';
+import { encodePng } from '../src/image.js';
 
 const SECRET = 'issuer-private-half-xyz';
 const AXES = { epoch: 1_000_000, weekday: 3, hour: 10, parity: 0 };
@@ -27,7 +28,7 @@ test('柱7 photo: renderScannable は finder 付き実 PNG を出す', () => {
   const { png, modules, total, side } = renderScannable(freshCord());
   assert.ok(png.subarray(0, 8).equals(PNG_SIG));
   assert.ok(modules > 0);
-  assert.equal(total, modules + 16); // データ + 四辺 BORDER(=8)×2
+  assert.equal(total, modules + 18); // データ + 四辺 BORDER(=FINDER7+GAP2=9)×2
   assert.equal(side, (total + 8) * 4); // + 静寂帯(QUIET=4)×2, SCALE=4
 });
 
@@ -40,8 +41,9 @@ test('柱7 photo: 縮小+並進した写真を finder 検出+補正で復元す�
   assert.equal(open(back, SECRET), TEXT);
 });
 
-test('柱7 photo: 面内回転(±20°/±32°)を補正して復元する', () => {
-  for (const deg of [20, -32]) {
+test('柱7 photo: キラリティ(TLリング)で全方位 0–360° の回転を復元する', () => {
+  // 四隅同形 finder の ±45° 限界を、TL のリング(重心が白=回転不変なトポロジー特徴)で破る。
+  for (const deg of [0, 45, 90, 135, 180, 225, 270, 315]) {
     const cord = freshCord();
     assert.equal(open(shoot(cord, { rotateDeg: deg, scale: 0.8 }), SECRET), TEXT, `rot ${deg}`);
   }
@@ -78,11 +80,22 @@ test('柱7 photo: 写真チャネルを抜けても改ざんは AEAD が検知�
   assert.throws(() => open(recovered, SECRET), CordTamper);
 });
 
-// ④ 射程の境界・安全な失敗 ──────────────────────────────────────
+test('柱7 photo: 全方位回転 + 透視 + 劣化の複合でも復元する', () => {
+  const cord = freshCord();
+  for (const opts of [
+    { rotateDeg: 135, tiltY: 0.18, scale: 0.8, noise: 0.005 },
+    { rotateDeg: 250, tiltX: 0.2, scale: 0.78, blur: 1, brightness: -20 },
+  ]) {
+    assert.equal(open(shoot(cord, opts), SECRET), TEXT, JSON.stringify(opts));
+  }
+});
 
-test('柱7 photo: 面内回転の限界(±45°)を超えると安全に失敗する(PhotoError)', () => {
-  const { png } = renderScannable(freshCord());
-  assert.throws(() => scanPhoto(simulatePhoto(png, { rotateDeg: 60, scale: 0.8 })), PhotoError);
+// ④ 安全な失敗 ──────────────────────────────────────────────────
+
+test('柱7 photo: finder を見つけられない画像は安全に失敗する(PhotoError)', () => {
+  // 一様グレー(finder の無い)画像。連結成分が finder 条件を満たさず PhotoError。
+  const blank = encodePng(Buffer.alloc(200 * 200, 200), 200, 200);
+  assert.throws(() => scanPhoto(blank), PhotoError);
 });
 
 test('柱7 photo: finder の無い画像/PNG でないものは安全に失敗する', () => {

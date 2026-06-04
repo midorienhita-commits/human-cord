@@ -23,7 +23,7 @@ const { png, modules, total, side } = renderScannable(cord);
 writeFileSync('human-cord-scannable.png', png);
 console.log('--- ① finder 付き担体(renderScannable)---');
 console.log('PNG 書き出し    : human-cord-scannable.png (' + png.length + ' bytes)');
-console.log('格子            : データ ' + modules + '×' + modules + ' + 四隅 finder / 総 ' + total + '×' + total + ' モジュール / ' + side + 'px');
+console.log('格子            : データ ' + modules + '×' + modules + ' + 四隅 finder(TL=リング=キラリティ標識)/ 総 ' + total + '×' + total + ' モジュール / ' + side + 'px');
 
 // --- ② 傾けて撮った「写真」へ → 検出+補正で読み戻す ---
 console.log('\n--- ② 写真(回転・透視・背景・劣化)→ finder 検出 → 補正 → 読み戻し ---');
@@ -48,13 +48,25 @@ for (const s of shots) {
 writeFileSync('human-cord-photo.png', simulatePhoto(png, { rotateDeg: 12, tiltY: 0.15, scale: 0.82, blur: 1, brightness: 25 }));
 console.log('  写真サンプル    : human-cord-photo.png(回転+透視+ぼけ+露出)');
 
-// --- ③ 設計上の射程と「安全な失敗」---
-console.log('\n--- ③ 射程(面内回転 ≲±45°: 四隅 finder が同一形のため向きの曖昧性が限界)---');
+// --- ③ キラリティで全方位 0–360°(四隅同形 finder の ±45° 限界を TL リングが破る)---
+console.log('\n--- ③ キラリティ(TLリング)で全方位 0–360° ---');
+console.log('     四隅が同一形だと面内回転 ±45° で向きが曖昧。TL の「リング」(中央に穴=重心が白)は');
+console.log('     回転・尺度・透視に不変なトポロジー標識 → どれが物理 TL かを一意に決め、全周を解く。');
+let ok = 0;
+const degs = [0, 45, 90, 135, 180, 225, 270, 315];
+for (const deg of degs) {
+  try {
+    const back = scanPhoto(simulatePhoto(png, { rotateDeg: deg, scale: 0.8 }));
+    if (back.tip === cord.tip) ok++;
+  } catch { /* count below */ }
+}
+console.log('回転 ' + degs.join('/') + '° → ' + ok + '/' + degs.length + ' 復元');
+// 上下逆さ(180°)+ 透視 + ぼけ の難物も 1 件明示
 try {
-  scanPhoto(simulatePhoto(png, { rotateDeg: 60, scale: 0.8 }));
-  console.log('回転 60°              → (読めた — 想定外)');
+  const back = scanPhoto(simulatePhoto(png, { rotateDeg: 180, tiltX: 0.18, scale: 0.8, blur: 1 }));
+  console.log('上下逆さ+透視+ぼけ    → ✓ open: ' + open(back, ISSUER));
 } catch (e) {
-  console.log('回転 60°(限界超)     → ✗ ' + e.name + ': ' + e.message + ' (安全失敗)');
+  console.log('上下逆さ+透視+ぼけ    → ✗ ' + e.message);
 }
 
 // --- ④ 媒体層と暗号層は別ドメイン: 写真を抜けても「約束」は守られる ---
@@ -76,5 +88,5 @@ try {
   console.log('改ざん cord     : ✗ ' + (e instanceof CordTamper ? 'CordTamper' : e.name) + ' ← 写真を抜けても AEAD が改ざんを検知');
 }
 
-console.log('\n結論: 位置・回転・傾きが未知の「写真」からでも、finder で見つけ・透視補正し・RS で訂正して');
-console.log('      cord を復元できた。実カメラ撮影/AI 抽出・有機担体・録画リプレイ耐性は継続(§7)。');
+console.log('\n結論: 位置・回転(全周)・傾きが未知の「写真」からでも、finder で見つけ・キラリティで向きを決め・');
+console.log('      透視補正し・RS で訂正して cord を復元できた。実カメラ撮影/AI 抽出・有機担体・録画リプレイ耐性は継続(§7)。');

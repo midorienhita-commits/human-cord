@@ -23,7 +23,8 @@ import { cordToMatrix, matrixToCord, encodePng, decodePng, mulberry32, boxBlur, 
 
 const SCALE = 4;   // 1 モジュール = SCALE×SCALE px
 const QUIET = 4;   // 静寂帯(モジュール)
-const FINDER = 6;  // finder 正方(モジュール辺長)。4 隅に solid black
+const FINDER = 7;  // finder 正方(モジュール辺長)。4 隅。うち TL だけ「リング(中央に穴)」
+const RING_HOLE = 3; // TL finder の中央に空ける白い穴(モジュール辺長・中央寄せ)
 const GAP = 2;     // finder とデータ領域の白セパレータ(モジュール)
 const BORDER = FINDER + GAP; // データ領域は各辺から BORDER モジュール内側
 
@@ -36,10 +37,18 @@ export class PhotoError extends Error {
 }
 
 // ── 発行: finder 付き担体を実 PNG へ ───────────────────────────
-// 総格子 T×T = データ N×N + 四辺 BORDER。四隅に FINDER×FINDER の solid finder。
-function placeFinder(grid, T, cx0, cy0) {
+// 総格子 T×T = データ N×N + 四辺 BORDER。四隅に FINDER×FINDER の finder。
+// うち TL だけ「リング」(中央に白い穴)= キラリティ標識: 重心ピクセルが白になり、回転・尺度・
+// 透視に不変なトポロジー特徴として「どれが物理 TL か」を一意に決める(四隅同形の向き曖昧性を破る)。
+function placeFinder(grid, T, cx0, cy0, ring = false) {
   for (let y = 0; y < FINDER; y++) {
     for (let x = 0; x < FINDER; x++) grid[(cy0 + y) * T + (cx0 + x)] = 1;
+  }
+  if (ring) {
+    const off = (FINDER - RING_HOLE) >> 1; // 中央寄せ
+    for (let y = 0; y < RING_HOLE; y++) {
+      for (let x = 0; x < RING_HOLE; x++) grid[(cy0 + off + y) * T + (cx0 + off + x)] = 0; // 穴=白
+    }
   }
 }
 
@@ -58,8 +67,8 @@ export function renderScannable(cord) {
       grid[(BORDER + my) * T + (BORDER + mx)] = matrix[my * n + mx];
     }
   }
-  // 四隅 finder
-  placeFinder(grid, T, 0, 0);
+  // 四隅 finder。TL(左上)だけリング(キラリティ標識)。
+  placeFinder(grid, T, 0, 0, true); // TL = リング
   placeFinder(grid, T, T - FINDER, 0);
   placeFinder(grid, T, 0, T - FINDER);
   placeFinder(grid, T, T - FINDER, T - FINDER);
@@ -260,89 +269,136 @@ function connectedComponents(pixels, w, h, thr) {
   return comps;
 }
 
-// finder 候補: solid(高 fill)・正方(aspect≈1)・適度な大きさ。4 隅へ割り当て。
+// 凸包(Andrew monotone chain, 重心 cx,cy で。依存ゼロ)。頂点を CCW で返す。
+function convexHull(pts) {
+  if (pts.length <= 3) return [...pts];
+  const s = [...pts].sort((a, b) => a.cx - b.cx || a.cy - b.cy);
+  const cross = (o, a, b) => (a.cx - o.cx) * (b.cy - o.cy) - (a.cy - o.cy) * (b.cx - o.cx);
+  const lower = [];
+  for (const p of s) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = s.length - 1; i >= 0; i--) {
+    const p = s[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+// finder 候補から 4 隅を選び、リング(キラリティ標識=重心ピクセルが白)を識別する。
+//   向きの割り当て(どれが TL/TR/BR/BL か)は scanPhoto 側で「リング=物理 TL」を起点に行う。
 function findFinders(pixels, w, h, thr) {
   const comps = connectedComponents(pixels, w, h, thr);
   // minArea は絶対値(極小ノイズ/塩胡椒の単画素を除く)。finder の絶対サイズはモジュール尺に依り
   // 画像全体に依らないので、画像サイズ比で決めると大きい担体で finder を弾く(=バグだった)。
   const minArea = 30;
   const maxBox = Math.min(w, h) * 0.4; // データ全域の巨大連結塊を除外
-  // solid 正方 finder: 充填率は回転で 1/(cos+sin)² まで下がる(45°で 0.5)。0.5 まで許して
-  // 回転 ≲±40° を射程に。aspect は回転正方の AABB が正方に近いまま=1 付近で絞る。
+  // 正方 finder の充填率は回転で 1/(cos+sin)² まで下がる(45°で solid=0.5, リング≈0.41)。
+  // 全方位(0–360°)を射程にするため 0.35 まで許す。aspect は回転正方の AABB が正方に近いまま=1 付近。
   const cand = comps.filter((c) =>
-    c.area >= minArea && c.fill >= 0.5 && c.aspect >= 0.72 && c.aspect <= 1.38 &&
+    c.area >= minArea && c.fill >= 0.35 && c.aspect >= 0.72 && c.aspect <= 1.38 &&
     c.bw <= maxBox && c.bh <= maxBox);
   if (cand.length < 4) throw new PhotoError(`finder candidates < 4 (got ${cand.length})`);
-  // finder は担体の物理的な四隅 = データより必ず外側 → 各隅方向の極値が finder。
-  //   TL=min(x+y), BR=max(x+y), TR=max(x-y), BL=min(x-y)。中央値プールは不要(大 N で誤排除する)。
-  const pick = (score, want) => {
-    let bestC = cand[0];
-    let bestV = want === 'max' ? -Infinity : Infinity;
-    for (const c of cand) {
-      const v = score(c);
-      if ((want === 'max' && v > bestV) || (want === 'min' && v < bestV)) { bestV = v; bestC = c; }
+  // finder は担体の物理的な四隅。データ領域は BORDER 内側=4 finder が成す四角形の**内部**にあるので、
+  // 全候補の**凸包頂点が finder**。凸包は重心に依らず、回転・透視に頑健(最遠4点法の重心バイアス
+  // による取りこぼし=断続失敗を避ける)。x±y 極値法の 45° 退化も起きない。
+  let hull = convexHull(cand);
+  if (hull.length < 4) throw new PhotoError(`convex hull < 4 vertices (got ${hull.length})`);
+  if (hull.length > 4) {
+    // 背景ノイズ塊などが頂点に混じった場合: finder は大面積 → 面積上位 4 を採る。
+    hull = [...hull].sort((a, b) => b.area - a.area).slice(0, 4);
+  }
+  const corners = hull;
+  // リング識別: 各 finder の重心ピクセル色。リングは中央が穴=白(>thr)、solid は黒(<=thr)。
+  //   重心(黒画素の質量中心)は対称な穴の中央に落ちるため、回転・尺度・透視に不変。
+  let ringIndex = -1;
+  let ringCount = 0;
+  for (let i = 0; i < 4; i++) {
+    const px = Math.round(corners[i].cx);
+    const py = Math.round(corners[i].cy);
+    if (pixels[py * w + px] > thr) { ringIndex = i; ringCount++; }
+  }
+  if (ringCount !== 1) ringIndex = -1; // 0 個 or 複数なら不確定 → scanPhoto が全候補を試す
+  return { corners, ringIndex };
+}
+
+// 与えた [TL,TR,BR,BL] 対応でホモグラフィ補正 → モジュール再標本 → matrixToCord。
+//   N(データ辺長)は finder 間隔/面積から推定し、ヘッダ magic+RS が通る候補をブルートフォース。
+//   復号できなければ null(向き/順序が誤りの可能性=呼び出し側が別候補を試す)。
+function decodeWithCorners(pixels, w, h, thr, [TL, TR, BR, BL]) {
+  const H = solveHomography([[0, 0], [1, 0], [1, 1], [0, 1]],
+    [[TL.cx, TL.cy], [TR.cx, TR.cy], [BR.cx, BR.cy], [BL.cx, BL.cy]]);
+  // modulePx は面積から(回転不変。bbox 幅は回転で √2 方向に膨らみ過大推定になる)。
+  const modulePx = (Math.sqrt(TL.area) + Math.sqrt(TR.area) + Math.sqrt(BR.area) + Math.sqrt(BL.area)) / 4 / FINDER;
+  const distTLTR = Math.hypot(TR.cx - TL.cx, TR.cy - TL.cy);
+  const distTLBL = Math.hypot(BL.cx - TL.cx, BL.cy - TL.cy);
+  const spanMod = ((distTLTR + distTLBL) / 2) / modulePx; // ≈ (T-7) = (N+11)
+  const nEst = Math.round(spanMod - 11);
+  // データ module (mx,my) の単位座標: ((6+mx)/(N+11), (6+my)/(N+11))。finder 中心=(3.5,3.5)/(T-3.5,…)。
+  for (let d = 0; d <= 20; d++) {
+    for (const dn of d === 0 ? [0] : [d, -d]) {
+      const N = nEst + dn;
+      if (N < 1) continue;
+      const denom = N + 11;
+      const bits = new Uint8Array(N * N);
+      for (let my = 0; my < N; my++) {
+        for (let mx = 0; mx < N; mx++) {
+          const [px, py] = H((6 + mx) / denom, (6 + my) / denom);
+          bits[my * N + mx] = sampleBilinear(pixels, w, h, px, py) <= thr ? 1 : 0;
+        }
+      }
+      try { return matrixToCord(bits); } catch { /* 次の N */ }
     }
-    return bestC;
-  };
-  const TL = pick((c) => c.cx + c.cy, 'min');
-  const BR = pick((c) => c.cx + c.cy, 'max');
-  const TR = pick((c) => c.cx - c.cy, 'max');
-  const BL = pick((c) => c.cx - c.cy, 'min');
-  const uniq = new Set([TL, BR, TR, BL]);
-  if (uniq.size !== 4) throw new PhotoError('finder corner assignment collided (rotation > limit?)');
-  // modulePx は面積から(面積は回転不変。bbox 幅は回転で √2 方向に膨らみ過大推定になる)。
-  const modulePx = (Math.sqrt(TL.area) + Math.sqrt(TR.area) + Math.sqrt(BL.area) + Math.sqrt(BR.area)) / 4 / FINDER;
-  return { TL, TR, BR, BL, modulePx };
+  }
+  return null;
 }
 
 /**
- * scanPhoto: 写真風 PNG → cord。finder 検出 → ホモグラフィ補正 → モジュール再標本 → RS 復号。
- *   N(データ辺長)は finder 間隔から推定し、ヘッダ magic が通る候補を採る(自己修正)。
+ * scanPhoto: 写真風 PNG → cord。finder 検出 → 向き決定(キラリティ)→ ホモグラフィ補正 → 再標本 → RS 復号。
+ *   向きの曖昧性(四隅同形 finder では面内回転 ±45° が限界)を、TL のリング(重心が白)で破る。
+ *   リングを物理 TL の起点とし、4 隅を角度順(巡回)に並べて [TL,TR,BR,BL] を一意に決める
+ *   → 全方位(0–360°)+ 鏡像(裏返し)に対応。リング不検出時は全 4 起点 × 2 方向を試す保険つき。
  * @param {Buffer} png
  * @returns {object} cord
  */
 export function scanPhoto(png) {
   const { w, h, pixels } = decodePng(png);
   const thr = otsuThreshold(pixels);
-  const { TL, TR, BR, BL, modulePx } = findFinders(pixels, w, h, thr);
+  const { corners, ringIndex } = findFinders(pixels, w, h, thr);
 
-  // finder 中心(モジュール座標 (3,3),(T-3,3),(T-3,T-3),(3,T-3))を単位正方へ。
-  const H = solveHomography([[0, 0], [1, 0], [1, 1], [0, 1]],
-    [[TL.cx, TL.cy], [TR.cx, TR.cy], [BR.cx, BR.cy], [BL.cx, BL.cy]]);
+  // 4 隅を重心まわりの角度で巡回ソート(回転に不変な巡回順)。
+  const ccx = (corners[0].cx + corners[1].cx + corners[2].cx + corners[3].cx) / 4;
+  const ccy = (corners[0].cy + corners[1].cy + corners[2].cy + corners[3].cy) / 4;
+  const sorted = [...corners].sort((a, b) =>
+    Math.atan2(a.cy - ccy, a.cx - ccx) - Math.atan2(b.cy - ccy, b.cx - ccx));
 
-  // finder 中心間隔(モジュール)= (T-6) = (N+10)。画素間隔/modulePx から N を推定。
-  const distTLTR = Math.hypot(TR.cx - TL.cx, TR.cy - TL.cy);
-  const distTLBL = Math.hypot(BL.cx - TL.cx, BL.cy - TL.cy);
-  const spanMod = ((distTLTR + distTLBL) / 2) / modulePx; // ≈ N+10
-  const nEst = Math.round(spanMod - 10);
+  // 起点(物理 TL)候補: リングが一意なら其処、なければ全 4 隅。各起点で順方向/逆方向(鏡像)を試す。
+  const rot = (k) => [sorted[k % 4], sorted[(k + 1) % 4], sorted[(k + 2) % 4], sorted[(k + 3) % 4]];
+  const rev = (k) => [sorted[k % 4], sorted[(k + 3) % 4], sorted[(k + 2) % 4], sorted[(k + 1) % 4]];
+  const ringPos = ringIndex >= 0 ? sorted.indexOf(corners[ringIndex]) : -1;
+  const starts = ringPos >= 0 ? [ringPos] : [0, 1, 2, 3];
 
-  // データ module (mx,my) の単位座標: ((5.5+mx)/(N+10), (5.5+my)/(N+10))。
-  // N は推定 nEst の周辺をブルートフォース探索し、ヘッダ magic+RS が通る最初を採る。
-  //   しきい値化で finder 面積にバイアスが乗り nEst が数モジュールずれ得るため広めに探索。
-  //   誤った N は乱数同然のビットになり、magic(0x48)+版+RS+本体RS+JSON を全通過する確率は
-  //   無視できる(=自己修正が安全に成立する)。中心位置(ホモグラフィ)は正確なのが前提。
-  const order = [];
-  for (let d = 0; d <= 20; d++) { order.push(d); if (d) order.push(-d); }
-  let lastErr = null;
-  for (const dn of order) {
-    const N = nEst + dn;
-    if (N < 1) continue;
-    const denom = N + 10;
-    const bits = new Uint8Array(N * N);
-    for (let my = 0; my < N; my++) {
-      for (let mx = 0; mx < N; mx++) {
-        const [px, py] = H((5.5 + mx) / denom, (5.5 + my) / denom);
-        bits[my * N + mx] = sampleBilinear(pixels, w, h, px, py) <= thr ? 1 : 0;
-      }
-    }
-    try {
-      return matrixToCord(bits);
-    } catch (e) {
-      lastErr = e;
+  for (const k of starts) {
+    for (const ordering of [rot(k), rev(k)]) { // 順=非鏡像 / 逆=鏡像
+      const cord = decodeWithCorners(pixels, w, h, thr, ordering);
+      if (cord) return cord;
     }
   }
-  throw new PhotoError('decode failed for all N candidates near ' + nEst +
-    (lastErr ? ' (' + lastErr.message + ')' : ''));
+  // リング起点で全滅 → 念のため全起点もさらう(リング誤検出/極端な劣化の保険)。
+  if (ringPos >= 0) {
+    for (let k = 0; k < 4; k++) {
+      for (const ordering of [rot(k), rev(k)]) {
+        const cord = decodeWithCorners(pixels, w, h, thr, ordering);
+        if (cord) return cord;
+      }
+    }
+  }
+  throw new PhotoError('decode failed (finder 検出済だが全向き/全 N で復号不可)');
 }
 
 export { ImageCarrierError };

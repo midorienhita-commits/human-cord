@@ -15,6 +15,7 @@
     "demo:image": "node examples/image-demo.js",
     "demo:photo": "node examples/photo-demo.js",
     "demo:live": "node examples/livecord-demo.js",
+    "demo:challenge": "node examples/challenge-demo.js",
     "demo:audio": "node examples/audio-demo.js",
     "demo:e2e": "node examples/e2e-demo.js",
     "demo:ecc": "node examples/ecc-demo.js",

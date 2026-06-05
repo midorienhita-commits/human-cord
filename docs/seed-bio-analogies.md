@@ -57,7 +57,9 @@
 - **要(なぜ epoch を freshen できないか)**: `epoch` は公開軸だが `deriveCodebook` の salt に effく → 書き換えると
   codebook が変わり ratchet 鍵列が変わって AEAD が割れる(open が throw)。**epoch は実質 ciphertext に束縛**。
 - **正直な限界**: 非対話では「鮮度窓内・別の検証者への即時リプレイ」は原理的に防げない(窓を frameMs 数個に
-  絞れば実用上ほぼ封じる)。厳密な liveness はチャレンジ応答(検証者 nonce をその場で取り込む対話)= 将来課題。
+  絞れば実用上ほぼ封じる)。厳密な liveness はチャレンジ応答(検証者 nonce をその場で取り込む対話)
+  = **`src/challenge.js` で実装済み**(2026-06-05)。検証者 nonce を応答の context に暗号束縛し、別検証者への
+  即時リプレイを mismatch で弾く。残る限界は実時間中継(MITM relay)/距離詐称=距離限定の領分。
 
 ## 3. 二重らせんの「ひねり」= 視覚担体の構造モチーフ ★着目点
 

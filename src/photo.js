@@ -166,13 +166,12 @@ function subOffsets(k) {
   return offs;
 }
 
-// 単位座標 (ucx,ucy) のモジュール 1 個を、ホモグラフィ H 越しに offs×offs 点標本して多数決ビットを返す。
-//   ustep = 1 モジュールの単位幅(=1/(N+11))。offs は subOffsets の相対オフセット列。
-function sampleModuleBit(pixels, w, h, H, ucx, ucy, ustep, thr, offs) {
-  if (offs.length === 1) { // 単点(従来動作・比較用)
-    const [px, py] = H(ucx, ucy);
-    return sampleBilinear(pixels, w, h, px, py) <= thr ? 1 : 0;
-  }
+// 単位座標 (ucx,ucy) のモジュール 1 個を、ホモグラフィ H 越しに offs×offs 点標本し、暗い点の割合 ∈[0,1] を返す。
+//   ustep = 1 モジュールの単位幅(=1/(N+11))。offs は subOffsets の相対オフセット列(offs=[0] は単点=従来動作)。
+//   単一フレームは frac>0.5 で 2 値化(=フレーム内多数決)。複数フレーム融合(scanPhotoMulti)は frac を
+//   フレーム横断で平均してから 2 値化する(soft 融合)= 各フレームの票を平等に混ぜ、少数フレームの
+//   遮蔽(指・影・反射)やノイズを、多数のクリーンなフレームが押し返す(§5.11)。
+function moduleDarkFrac(pixels, w, h, H, ucx, ucy, ustep, thr, offs) {
   let dark = 0;
   let total = 0;
   for (const oy of offs) {
@@ -182,7 +181,7 @@ function sampleModuleBit(pixels, w, h, H, ucx, ucy, ustep, thr, offs) {
       total++;
     }
   }
-  return dark * 2 > total ? 1 : 0; // 過半数が暗 → 黒(1)。同数は白(背景優先)
+  return dark / total; // 暗い点の割合(過半数が暗 = >0.5)
 }
 
 // ── 劣化: 担体 PNG を「写真」へ(回転・透視・並進・背景・光学)──────
@@ -190,12 +189,15 @@ function sampleModuleBit(pixels, w, h, H, ucx, ucy, ustep, thr, offs) {
  * simulatePhoto: 担体 PNG を、傾けた机/画面を撮った写真風 PNG に変換する(実カメラ前段)。
  * @param {Buffer} png 担体(renderScannable の出力)
  * @param {{scale?:number, rotateDeg?:number, tiltX?:number, tiltY?:number, tx?:number, ty?:number,
- *          canvas?:number, background?:number, blur?:number, brightness?:number, noise?:number, seed?:number}} [opts]
+ *          canvas?:number, background?:number, blur?:number, brightness?:number, noise?:number, seed?:number,
+ *          occlude?:{x:number,y:number,w:number,h:number,value?:number}}} [opts]
+ *   occlude = 指/影/反射で覆う矩形(キャンバス比 [0,1]、value=覆いの輝度・既定 30=暗い指)。フレームごとに
+ *   位置を変えると「単フレームでは欠ける/複数フレーム融合で埋まる」を作れる(§5.11)。
  * @returns {Buffer} 写真風 PNG(背景込み・劣化込み)
  */
 export function simulatePhoto(png, opts = {}) {
   const { scale = 1, rotateDeg = 0, tiltX = 0, tiltY = 0, tx = 0, ty = 0,
-    background = 210, blur = 0, brightness = 0, noise = 0, seed = 1 } = opts;
+    background = 210, blur = 0, brightness = 0, noise = 0, seed = 1, occlude = null } = opts;
   const { w: cw, h: ch, pixels: carrier } = decodePng(png);
   const S = cw; // 担体は正方
   const canvas = Math.round((opts.canvas || S * 1.6));
@@ -227,6 +229,16 @@ export function simulatePhoto(png, opts = {}) {
         pixels[Y * canvas + X] = Math.round(sampleBilinear(carrier, cw, ch, x, y));
       }
     }
+  }
+
+  // 遮蔽(指・影・反射)= シーン中の物体。ワープ後・光学(ぼけ)前に矩形を覆う。
+  if (occlude) {
+    const ov = occlude.value == null ? 30 : occlude.value;
+    const ox0 = Math.max(0, Math.round(occlude.x * canvas));
+    const oy0 = Math.max(0, Math.round(occlude.y * canvas));
+    const ox1 = Math.min(canvas, Math.round((occlude.x + occlude.w) * canvas));
+    const oy1 = Math.min(canvas, Math.round((occlude.y + occlude.h) * canvas));
+    for (let Y = oy0; Y < oy1; Y++) pixels.fill(ov, Y * canvas + ox0, Y * canvas + ox1);
   }
 
   // 光学劣化(撮影で起きる photometric な劣化)。
@@ -365,11 +377,8 @@ function findFinders(pixels, w, h, thr) {
   return { corners, ringIndex };
 }
 
-// 与えた [TL,TR,BR,BL] 対応でホモグラフィ補正 → モジュール再標本 → matrixToCord。
-//   N(データ辺長)は finder 間隔/面積から推定し、ヘッダ magic+RS が通る候補をブルートフォース。
-//   各モジュールは offs×offs 点の多数決で読む(§5.10 高 N 頑健化)。
-//   復号できなければ null(向き/順序が誤りの可能性=呼び出し側が別候補を試す)。
-function decodeWithCorners(pixels, w, h, thr, [TL, TR, BR, BL], offs) {
+// [TL,TR,BR,BL] 対応から、単位正方(0..1)→ピクセルのホモグラフィ H と N(データ辺長)推定を返す(幾何のみ)。
+function cornerHomography([TL, TR, BR, BL]) {
   const H = solveHomography([[0, 0], [1, 0], [1, 1], [0, 1]],
     [[TL.cx, TL.cy], [TR.cx, TR.cy], [BR.cx, BR.cy], [BL.cx, BL.cy]]);
   // modulePx は面積から(回転不変。bbox 幅は回転で √2 方向に膨らみ過大推定になる)。
@@ -377,24 +386,56 @@ function decodeWithCorners(pixels, w, h, thr, [TL, TR, BR, BL], offs) {
   const distTLTR = Math.hypot(TR.cx - TL.cx, TR.cy - TL.cy);
   const distTLBL = Math.hypot(BL.cx - TL.cx, BL.cy - TL.cy);
   const spanMod = ((distTLTR + distTLBL) / 2) / modulePx; // ≈ (T-7) = (N+11)
-  const nEst = Math.round(spanMod - 11);
-  // データ module (mx,my) の単位座標: ((6+mx)/(N+11), (6+my)/(N+11))。finder 中心=(3.5,3.5)/(T-3.5,…)。
+  return { H, nEst: Math.round(spanMod - 11) };
+}
+
+// N のもとで H 越しに N×N の「暗さ率」グリッド(各モジュール ∈[0,1])を標本する。
+//   データ module (mx,my) の単位座標: ((6+mx)/(N+11), (6+my)/(N+11))。finder 中心=(3.5,3.5)/(T-3.5,…)。
+function sampleDarkGrid(pixels, w, h, thr, H, N, offs) {
+  const denom = N + 11;
+  const ustep = 1 / denom; // 1 モジュールの単位幅
+  const grid = new Float64Array(N * N);
+  for (let my = 0; my < N; my++) {
+    for (let mx = 0; mx < N; mx++) {
+      grid[my * N + mx] = moduleDarkFrac(pixels, w, h, H, (6 + mx) / denom, (6 + my) / denom, ustep, thr, offs);
+    }
+  }
+  return grid;
+}
+
+// 与えた [TL,TR,BR,BL] 対応でホモグラフィ補正 → モジュール再標本 → matrixToCord(単一フレーム)。
+//   N は finder 間隔/面積から推定し、ヘッダ magic+RS が通る候補をブルートフォース。
+//   各モジュールは offs×offs 点の多数決(frac>0.5)で読む(§5.10 高 N 頑健化)。
+//   復号できなければ null(向き/順序が誤りの可能性=呼び出し側が別候補を試す)。
+function decodeWithCorners(pixels, w, h, thr, ordering, offs) {
+  const { H, nEst } = cornerHomography(ordering);
   for (let d = 0; d <= 20; d++) {
     for (const dn of d === 0 ? [0] : [d, -d]) {
       const N = nEst + dn;
       if (N < 1) continue;
-      const denom = N + 11;
+      const grid = sampleDarkGrid(pixels, w, h, thr, H, N, offs);
       const bits = new Uint8Array(N * N);
-      const ustep = 1 / denom; // 1 モジュールの単位幅
-      for (let my = 0; my < N; my++) {
-        for (let mx = 0; mx < N; mx++) {
-          bits[my * N + mx] = sampleModuleBit(pixels, w, h, H, (6 + mx) / denom, (6 + my) / denom, ustep, thr, offs);
-        }
-      }
+      for (let i = 0; i < bits.length; i++) bits[i] = grid[i] > 0.5 ? 1 : 0; // フレーム内多数決
       try { return matrixToCord(bits); } catch { /* 次の N */ }
     }
   }
   return null;
+}
+
+// 起点 k(物理 TL)から巡回順に [TL,TR,BR,BL] を並べる。rot=順(非鏡像)/ rev=逆(鏡像)。
+const rotOrder = (sorted, k) => [sorted[k % 4], sorted[(k + 1) % 4], sorted[(k + 2) % 4], sorted[(k + 3) % 4]];
+const revOrder = (sorted, k) => [sorted[k % 4], sorted[(k + 3) % 4], sorted[(k + 2) % 4], sorted[(k + 1) % 4]];
+
+// finder を検出し、4 隅を重心まわりの角度で巡回ソート(回転不変な巡回順)+ リング起点(物理 TL)位置を返す。
+//   = 向きの幾何的確定。ringPos<0 はリング不検出(向きが幾何だけでは未確定 → 呼び出し側が全起点を試す)。
+function frameGeometry(pixels, w, h, thr) {
+  const { corners, ringIndex } = findFinders(pixels, w, h, thr);
+  const ccx = (corners[0].cx + corners[1].cx + corners[2].cx + corners[3].cx) / 4;
+  const ccy = (corners[0].cy + corners[1].cy + corners[2].cy + corners[3].cy) / 4;
+  const sorted = [...corners].sort((a, b) =>
+    Math.atan2(a.cy - ccy, a.cx - ccx) - Math.atan2(b.cy - ccy, b.cx - ccx));
+  const ringPos = ringIndex >= 0 ? sorted.indexOf(corners[ringIndex]) : -1;
+  return { sorted, ringPos };
 }
 
 /**
@@ -412,22 +453,12 @@ export function scanPhoto(png, opts = {}) {
   const offs = subOffsets(k);
   const { w, h, pixels } = decodePng(png);
   const thr = otsuThreshold(pixels);
-  const { corners, ringIndex } = findFinders(pixels, w, h, thr);
-
-  // 4 隅を重心まわりの角度で巡回ソート(回転に不変な巡回順)。
-  const ccx = (corners[0].cx + corners[1].cx + corners[2].cx + corners[3].cx) / 4;
-  const ccy = (corners[0].cy + corners[1].cy + corners[2].cy + corners[3].cy) / 4;
-  const sorted = [...corners].sort((a, b) =>
-    Math.atan2(a.cy - ccy, a.cx - ccx) - Math.atan2(b.cy - ccy, b.cx - ccx));
+  const { sorted, ringPos } = frameGeometry(pixels, w, h, thr);
 
   // 起点(物理 TL)候補: リングが一意なら其処、なければ全 4 隅。各起点で順方向/逆方向(鏡像)を試す。
-  const rot = (k) => [sorted[k % 4], sorted[(k + 1) % 4], sorted[(k + 2) % 4], sorted[(k + 3) % 4]];
-  const rev = (k) => [sorted[k % 4], sorted[(k + 3) % 4], sorted[(k + 2) % 4], sorted[(k + 1) % 4]];
-  const ringPos = ringIndex >= 0 ? sorted.indexOf(corners[ringIndex]) : -1;
   const starts = ringPos >= 0 ? [ringPos] : [0, 1, 2, 3];
-
   for (const s of starts) {
-    for (const ordering of [rot(s), rev(s)]) { // 順=非鏡像 / 逆=鏡像
+    for (const ordering of [rotOrder(sorted, s), revOrder(sorted, s)]) { // 順=非鏡像 / 逆=鏡像
       const cord = decodeWithCorners(pixels, w, h, thr, ordering, offs);
       if (cord) return cord;
     }
@@ -435,13 +466,78 @@ export function scanPhoto(png, opts = {}) {
   // リング起点で全滅 → 念のため全起点もさらう(リング誤検出/極端な劣化の保険)。
   if (ringPos >= 0) {
     for (let s = 0; s < 4; s++) {
-      for (const ordering of [rot(s), rev(s)]) {
+      for (const ordering of [rotOrder(sorted, s), revOrder(sorted, s)]) {
         const cord = decodeWithCorners(pixels, w, h, thr, ordering, offs);
         if (cord) return cord;
       }
     }
   }
   throw new PhotoError('decode failed (finder 検出済だが全向き/全 N で復号不可)');
+}
+
+/**
+ * scanPhotoMulti: 同じ担体を撮った複数フレーム(写真風 PNG の配列)を融合して 1 つの cord を復元する。
+ *   実カメラ/動画は同じ担体を何枚も撮る。各フレームは独立ノイズ・わずかに違う幾何・違う遮蔽(指/影/反射が
+ *   毎回別の場所)を持つ。単フレームでは欠ける情報を、フレーム横断で**モジュールごとに暗さ率を平均(soft 融合)**
+ *   して埋める = 各フレームの票を平等に混ぜ、少数フレームの遮蔽・ノイズを多数のクリーンなフレームが押し返す。
+ *   フレーム内多数決(§5.10)を時間方向へ拡張したもの(§5.11)。
+ *
+ *   役割分担は不変: これは「目」(物理層の冗長)。融合後も AEAD(柱9)/発行者検査(柱4)は独立に効く。
+ *   向きはフレームごとにキラリティ(リング)で幾何的に確定し、winding(順/鏡像)はフレーム一括で試す。
+ *   リング不検出のフレームは向きを幾何だけで確定できないため融合から外す(安全側)。
+ * @param {Buffer[]} pngs 同一担体を撮った写真風 PNG の配列(1 枚でも可=単フレーム soft 復号と等価)。
+ * @param {{subsamples?:number}} [opts]
+ * @returns {object} cord
+ */
+export function scanPhotoMulti(pngs, opts = {}) {
+  if (!Array.isArray(pngs) || pngs.length === 0) throw new PhotoError('scanPhotoMulti は PNG の非空配列を要する');
+  const k = opts.subsamples == null ? 3 : Math.max(1, Math.floor(opts.subsamples));
+  const offs = subOffsets(k);
+  // 各フレームの幾何(finder + リング向き)を確定。読めない/リング不検出のフレームは融合から外す。
+  const frames = [];
+  for (const png of pngs) {
+    let w, h, pixels, thr, geo;
+    try {
+      ({ w, h, pixels } = decodePng(png));
+      thr = otsuThreshold(pixels);
+      geo = frameGeometry(pixels, w, h, thr);
+    } catch { continue; } // finder 不検出など → このフレームは捨てる
+    if (geo.ringPos < 0) continue; // 向きを幾何的に確定できない → 融合に使わない(保険なし)
+    frames.push({ pixels, w, h, thr, sorted: geo.sorted, ringPos: geo.ringPos });
+  }
+  if (frames.length === 0) throw new PhotoError('融合に使えるフレームが無い(全フレームで finder/リング不検出)');
+
+  // N 中心 = 各フレーム nEst の中央値(幾何は向きに依らないので primary winding で代表)。
+  const nEsts = frames.map((f) => cornerHomography(rotOrder(f.sorted, f.ringPos)).nEst).sort((a, b) => a - b);
+  const nCenter = nEsts[nEsts.length >> 1];
+
+  // winding(順/鏡像)はフレーム一括(同じ撮影系は全フレーム同じ巻き)。各 winding × N 候補で融合復号。
+  for (const winding of [rotOrder, revOrder]) {
+    const geos = frames.map((f) => {
+      const { H } = cornerHomography(winding(f.sorted, f.ringPos));
+      return { pixels: f.pixels, w: f.w, h: f.h, thr: f.thr, H };
+    });
+    for (let d = 0; d <= 20; d++) {
+      for (const dn of d === 0 ? [0] : [d, -d]) {
+        const N = nCenter + dn;
+        if (N < 1) continue;
+        const denom = N + 11;
+        const ustep = 1 / denom;
+        const bits = new Uint8Array(N * N);
+        for (let my = 0; my < N; my++) {
+          for (let mx = 0; mx < N; mx++) {
+            const ucx = (6 + mx) / denom;
+            const ucy = (6 + my) / denom;
+            let sum = 0; // Σ 暗さ率(フレーム横断 soft 融合)
+            for (const g of geos) sum += moduleDarkFrac(g.pixels, g.w, g.h, g.H, ucx, ucy, ustep, g.thr, offs);
+            bits[my * N + mx] = sum * 2 > geos.length ? 1 : 0; // フレーム平均が >0.5 → 黒
+          }
+        }
+        try { return matrixToCord(bits); } catch { /* 次の N */ }
+      }
+    }
+  }
+  throw new PhotoError(`fusion decode failed (${frames.length} frame(s), N≈${nCenter})`);
 }
 
 export { ImageCarrierError };

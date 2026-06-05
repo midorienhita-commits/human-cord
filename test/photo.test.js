@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { seal, open, CordTamper } from '../src/cord.js';
-import { renderScannable, simulatePhoto, scanPhoto, PhotoError } from '../src/photo.js';
+import { renderScannable, simulatePhoto, scanPhoto, scanPhotoMulti, PhotoError } from '../src/photo.js';
 import { encodePng } from '../src/image.js';
 
 const SECRET = 'issuer-private-half-xyz';
@@ -122,4 +122,41 @@ test('柱7 photo: simulatePhoto は seed が同じなら同一画像(決定的)'
   const a = simulatePhoto(png, { rotateDeg: 10, noise: 0.02, seed: 5 });
   const b = simulatePhoto(png, { rotateDeg: 10, noise: 0.02, seed: 5 });
   assert.ok(a.equals(b));
+});
+
+// ⑥ 複数フレーム融合(§5.11)──────────────────────────────────────
+
+test('柱7 photo: 遮蔽 — 各フレームで別の場所が隠れても複数フレーム融合で復元する', () => {
+  // 同じ担体を 3 枚撮影。各フレームでデータ領域の別の 1/3 帯が指/影で隠れる(finder は無傷)。
+  // どの 1 枚も遮蔽帯が RS 訂正能力を超えて単独復号は全滅。フレーム横断で暗さ率を平均(soft 融合)すると
+  // 各モジュールは 2/3 のクリーンなフレームに支えられて埋まり、復元する(§2 本命脅威=影・指・反射)。
+  const cord = freshCord();
+  const { png } = renderScannable(cord);
+  const band = (i) => ({ x: 0.27, w: 0.47, y: 0.27 + i * (0.47 / 3), h: 0.47 / 3 });
+  const frames = [0, 1, 2].map((i) => simulatePhoto(png, { scale: 0.9, noise: 0.01, seed: 10 + i, occlude: band(i) }));
+  // 同じ融合経路で 1 枚 vs 3 枚を比較(フレーム数だけが違う = 救ったのは融合だと示せる)。
+  assert.throws(() => scanPhotoMulti([frames[1]]), PhotoError); // 1 枚だけでは遮蔽帯が RS 能力超過で復号不可
+  const back = scanPhotoMulti(frames); // 3 枚融合で復元
+  assert.equal(back.tip, cord.tip);
+  assert.equal(open(back, SECRET), TEXT);
+});
+
+test('柱7 photo: 強ノイズ — 単フレームは全滅でも独立ノイズの複数フレーム融合で復元する', () => {
+  // noise=0.25(塩胡椒)では 3×3 多数決でも単フレームは破綻(§5.10 の天井超)。独立ノイズの 3 フレームを
+  // soft 融合すると、フレーム平均がノイズを均して復元する(フレーム内多数決 §5.10 の時間方向拡張)。
+  const cord = freshCord();
+  const { png } = renderScannable(cord);
+  const frames = [0, 1, 2].map((i) => simulatePhoto(png, { scale: 0.9, noise: 0.25, seed: 20 + i }));
+  assert.throws(() => scanPhotoMulti([frames[0]]), PhotoError); // 1 枚だけでは 3×3 多数決でも破綻
+  const back = scanPhotoMulti(frames);
+  assert.equal(back.tip, cord.tip);
+  assert.equal(open(back, SECRET), TEXT);
+});
+
+test('柱7 photo: scanPhotoMulti は 1 枚なら単フレームと等価 / 空配列は安全に失敗する', () => {
+  const cord = freshCord();
+  const { png } = renderScannable(cord);
+  const one = simulatePhoto(png, { scale: 0.85, rotateDeg: 10 });
+  assert.equal(open(scanPhotoMulti([one]), SECRET), TEXT); // 1 枚 = 単フレーム soft 復号
+  assert.throws(() => scanPhotoMulti([]), PhotoError);     // 空配列は安全に失敗
 });

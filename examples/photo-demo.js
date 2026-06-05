@@ -9,7 +9,7 @@
 
 import { writeFileSync } from 'node:fs';
 import { seal, open, CordTamper } from '../src/cord.js';
-import { renderScannable, simulatePhoto, scanPhoto, PhotoError } from '../src/photo.js';
+import { renderScannable, simulatePhoto, scanPhoto, scanPhotoMulti, PhotoError } from '../src/photo.js';
 
 const ISSUER = 'demo-issuer-secret-not-real';
 const AXES = { epoch: 1_717_000_000_000, weekday: 2, hour: 9, parity: 0 };
@@ -104,6 +104,24 @@ for (const noise of [0.01, 0.02, 0.03, 0.05, 0.1]) {
 console.log('  → 単点は noise≈0.02 で破綻、3×3 多数決は noise≈0.2 まで復元。');
 console.log('    (5×5+ は module が小さい間は標本が相関し上積み無し — 大きな担体/高 SCALE で効く=正直な限界)');
 
+// --- ⑥ 複数フレーム融合(§5.11): 指/影が毎回別の場所でも、何枚か撮れば埋まる ---
+console.log('\n--- ⑥ 複数フレーム融合(§5.11)指/影で別の場所が隠れても、複数枚で埋める ---');
+console.log('     同じ担体を 3 枚撮影。各フレームでデータの別の 1/3 帯が指/影で隠れる(finder は無傷)。');
+console.log('     どの 1 枚も遮蔽帯が RS 能力を超えて単独では読めない。フレーム横断で暗さ率を平均(soft 融合)し、');
+console.log('     各モジュールを多数のクリーンなフレームで支えて復元する(§2 本命脅威=影・指・反射)。');
+const band = (i) => ({ x: 0.27, w: 0.47, y: 0.27 + i * (0.47 / 3), h: 0.47 / 3 });
+const occFrames = [0, 1, 2].map((i) => simulatePhoto(png, { scale: 0.9, noise: 0.01, seed: 10 + i, occlude: band(i) }));
+occFrames.forEach((f, i) => {
+  try { scanPhotoMulti([f]); console.log('  フレーム ' + i + ' 単独    → ✓?(想定外)'); }
+  catch { console.log('  フレーム ' + i + ' 単独    → ✗ 遮蔽帯で復号不可'); }
+});
+try {
+  const back = scanPhotoMulti(occFrames);
+  console.log('  3 枚を融合        → ✓ ' + (back.tip === cord.tip ? 'tip一致' : 'tip不一致') + ' / open: ' + open(back, ISSUER));
+} catch (e) { console.log('  3 枚を融合        → ✗ ' + e.message); }
+writeFileSync('human-cord-photo-occluded.png', occFrames[0]);
+console.log('  遮蔽フレーム例    : human-cord-photo-occluded.png(指/影で 1/3 帯が隠れた 1 枚)');
+
 console.log('\n結論: 位置・回転(全周)・傾きが未知の「写真」からでも、finder で見つけ・キラリティで向きを決め・');
-console.log('      透視補正し・多点標本の多数決でノイズを均し・RS で訂正して cord を復元できた。');
-console.log('      実カメラ撮影/端末内 AI 抽出・有機担体・録画リプレイ耐性は継続(§7)。');
+console.log('      透視補正し・多点標本の多数決でノイズを均し・複数フレームの融合で遮蔽を埋め・RS で訂正して');
+console.log('      cord を復元できた。実カメラ撮影/端末内 AI 抽出・有機担体・録画リプレイ耐性は継続(§7)。');

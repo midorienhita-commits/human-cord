@@ -16,8 +16,10 @@
 // 北極星(依存ゼロ): PNG=node:zlib(image.js)。Otsu 2値化・連結成分・ホモグラフィ(8元
 // ガウス消去)・バイリニア標本はすべて自前。新しい暗号も重い CV ライブラリも持ち込まない。
 //
-// 既知の射程(この増分): 面内回転 ≲ ±45°(4 隅 finder が同一形のため向きの曖昧性が出る限界)、
-//   中程度の透視・光学劣化まで。実カメラ撮影・有機担体・録画リプレイ耐性(動画 ratchet)は継続。
+// 既知の射程: 面内回転 0–360° 全周(§5.9 TL リング=キラリティで向き曖昧性を解消)+ 鏡像、
+//   中程度の透視・光学劣化まで。1 モジュールを k×k の小格子で標本し多数決(§5.10 高 N 頑健化)=
+//   塩胡椒ノイズ・格子レジストレーション誤差に強い(`scanPhoto(png,{subsamples})` 既定 3×3)。
+//   実カメラ撮影・端末内 AI 抽出・有機担体・録画リプレイ耐性(動画 ratchet)は継続。
 
 import { cordToMatrix, matrixToCord, encodePng, decodePng, mulberry32, boxBlur, ImageCarrierError } from './image.js';
 
@@ -145,6 +147,42 @@ function sampleBilinear(pixels, w, h, x, y) {
   const p01 = pixels[y1 * w + x0];
   const p11 = pixels[y1 * w + x1];
   return p00 * (1 - fx) * (1 - fy) + p10 * fx * (1 - fy) + p01 * (1 - fx) * fy + p11 * fx * fy;
+}
+
+// ── 多点標本 + 多数決(§5.10 高 N 頑健化)──────────────────────────
+// 1 モジュールを中心 1 点でなく k×k の小格子で標本し、各点を 2 値化して多数決で 1 ビットを決める。
+//   なぜ効くか:
+//   - 塩胡椒ノイズ(simulatePhoto の noise= ランダム画素を 0/255 へ反転)は各点で独立。多数決は
+//     過半数が反転しない限り正しい値を保つ → モジュール 1 個を倒すのに ⌈k²/2⌉ 点の反転が要る。
+//   - 格子レジストレーション誤差(中心がモジュール境界寄りに落ちる)も、モジュール内部の周辺票が支配。
+//   標本点はモジュール中央 ±span(中央 ~1-2·span の領域)に限定し、隣モジュールへ滲ませない。
+
+/** k 点標本のオフセット列(モジュール幅に対する相対)。k≤1 は単点(中央)= 従来動作。 */
+function subOffsets(k) {
+  if (k <= 1) return [0];
+  const span = 0.24; // 中央 ±0.24 モジュール(中央 ~48% 内)= 隣へ滲まない安全域
+  const offs = [];
+  for (let i = 0; i < k; i++) offs.push(-span + (2 * span * i) / (k - 1));
+  return offs;
+}
+
+// 単位座標 (ucx,ucy) のモジュール 1 個を、ホモグラフィ H 越しに offs×offs 点標本して多数決ビットを返す。
+//   ustep = 1 モジュールの単位幅(=1/(N+11))。offs は subOffsets の相対オフセット列。
+function sampleModuleBit(pixels, w, h, H, ucx, ucy, ustep, thr, offs) {
+  if (offs.length === 1) { // 単点(従来動作・比較用)
+    const [px, py] = H(ucx, ucy);
+    return sampleBilinear(pixels, w, h, px, py) <= thr ? 1 : 0;
+  }
+  let dark = 0;
+  let total = 0;
+  for (const oy of offs) {
+    for (const ox of offs) {
+      const [px, py] = H(ucx + ox * ustep, ucy + oy * ustep);
+      if (sampleBilinear(pixels, w, h, px, py) <= thr) dark++;
+      total++;
+    }
+  }
+  return dark * 2 > total ? 1 : 0; // 過半数が暗 → 黒(1)。同数は白(背景優先)
 }
 
 // ── 劣化: 担体 PNG を「写真」へ(回転・透視・並進・背景・光学)──────
@@ -329,8 +367,9 @@ function findFinders(pixels, w, h, thr) {
 
 // 与えた [TL,TR,BR,BL] 対応でホモグラフィ補正 → モジュール再標本 → matrixToCord。
 //   N(データ辺長)は finder 間隔/面積から推定し、ヘッダ magic+RS が通る候補をブルートフォース。
+//   各モジュールは offs×offs 点の多数決で読む(§5.10 高 N 頑健化)。
 //   復号できなければ null(向き/順序が誤りの可能性=呼び出し側が別候補を試す)。
-function decodeWithCorners(pixels, w, h, thr, [TL, TR, BR, BL]) {
+function decodeWithCorners(pixels, w, h, thr, [TL, TR, BR, BL], offs) {
   const H = solveHomography([[0, 0], [1, 0], [1, 1], [0, 1]],
     [[TL.cx, TL.cy], [TR.cx, TR.cy], [BR.cx, BR.cy], [BL.cx, BL.cy]]);
   // modulePx は面積から(回転不変。bbox 幅は回転で √2 方向に膨らみ過大推定になる)。
@@ -346,10 +385,10 @@ function decodeWithCorners(pixels, w, h, thr, [TL, TR, BR, BL]) {
       if (N < 1) continue;
       const denom = N + 11;
       const bits = new Uint8Array(N * N);
+      const ustep = 1 / denom; // 1 モジュールの単位幅
       for (let my = 0; my < N; my++) {
         for (let mx = 0; mx < N; mx++) {
-          const [px, py] = H((6 + mx) / denom, (6 + my) / denom);
-          bits[my * N + mx] = sampleBilinear(pixels, w, h, px, py) <= thr ? 1 : 0;
+          bits[my * N + mx] = sampleModuleBit(pixels, w, h, H, (6 + mx) / denom, (6 + my) / denom, ustep, thr, offs);
         }
       }
       try { return matrixToCord(bits); } catch { /* 次の N */ }
@@ -364,9 +403,13 @@ function decodeWithCorners(pixels, w, h, thr, [TL, TR, BR, BL]) {
  *   リングを物理 TL の起点とし、4 隅を角度順(巡回)に並べて [TL,TR,BR,BL] を一意に決める
  *   → 全方位(0–360°)+ 鏡像(裏返し)に対応。リング不検出時は全 4 起点 × 2 方向を試す保険つき。
  * @param {Buffer} png
+ * @param {{subsamples?:number}} [opts] subsamples = 1 モジュールあたりの 1 辺標本数(既定 3 = 3×3 多数決)。
+ *   1 を渡すと従来の中心 1 点標本(ノイズに弱い・比較用)。大きいほどノイズ余裕↑・標本コスト↑。
  * @returns {object} cord
  */
-export function scanPhoto(png) {
+export function scanPhoto(png, opts = {}) {
+  const k = opts.subsamples == null ? 3 : Math.max(1, Math.floor(opts.subsamples));
+  const offs = subOffsets(k);
   const { w, h, pixels } = decodePng(png);
   const thr = otsuThreshold(pixels);
   const { corners, ringIndex } = findFinders(pixels, w, h, thr);
@@ -383,17 +426,17 @@ export function scanPhoto(png) {
   const ringPos = ringIndex >= 0 ? sorted.indexOf(corners[ringIndex]) : -1;
   const starts = ringPos >= 0 ? [ringPos] : [0, 1, 2, 3];
 
-  for (const k of starts) {
-    for (const ordering of [rot(k), rev(k)]) { // 順=非鏡像 / 逆=鏡像
-      const cord = decodeWithCorners(pixels, w, h, thr, ordering);
+  for (const s of starts) {
+    for (const ordering of [rot(s), rev(s)]) { // 順=非鏡像 / 逆=鏡像
+      const cord = decodeWithCorners(pixels, w, h, thr, ordering, offs);
       if (cord) return cord;
     }
   }
   // リング起点で全滅 → 念のため全起点もさらう(リング誤検出/極端な劣化の保険)。
   if (ringPos >= 0) {
-    for (let k = 0; k < 4; k++) {
-      for (const ordering of [rot(k), rev(k)]) {
-        const cord = decodeWithCorners(pixels, w, h, thr, ordering);
+    for (let s = 0; s < 4; s++) {
+      for (const ordering of [rot(s), rev(s)]) {
+        const cord = decodeWithCorners(pixels, w, h, thr, ordering, offs);
         if (cord) return cord;
       }
     }

@@ -62,6 +62,19 @@ test('柱7 photo: 回転+透視+ぼけ+露出ずれ+ノイズの複合写真で�
   assert.equal(open(back, SECRET), TEXT);
 });
 
+test('柱7 photo: 高 N + 塩胡椒ノイズ — 単点標本は破綻し多数決(既定3×3)は同じ写真を復元する', () => {
+  // N=136(本番相当密度・1 モジュール ≈ 3.6px)。simulatePhoto の noise はランダム画素を 0/255 へ反転(塩胡椒)。
+  // 中心 1 点標本(subsamples:1)はノイズ余裕が無く、反転画素が RS 訂正能力を超えて PhotoError。
+  // k×k 多数決(既定 3×3)はモジュールごと過半数票で 1 ビットを守り、同一画像から復元する(§5.10)。
+  const cord = freshCord();
+  const { png } = renderScannable(cord);
+  const noisy = simulatePhoto(png, { scale: 0.9, noise: 0.03, seed: 7 }); // seed 固定 = 決定的
+  assert.throws(() => scanPhoto(noisy, { subsamples: 1 }), PhotoError); // 単点は破綻
+  const back = scanPhoto(noisy); // 既定 3×3 多数決 = 同じ画像から復元
+  assert.equal(back.tip, cord.tip);
+  assert.equal(open(back, SECRET), TEXT);
+});
+
 // ③ 媒体層と暗号層は別ドメイン ──────────────────────────────────
 
 test('柱7 photo: 写真チャネルを抜けても改ざんは AEAD が検知する', () => {

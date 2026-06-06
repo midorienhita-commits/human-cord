@@ -160,3 +160,50 @@ test('柱7 photo: scanPhotoMulti は 1 枚なら単フレームと等価 / 空�
   assert.equal(open(scanPhotoMulti([one]), SECRET), TEXT); // 1 枚 = 単フレーム soft 復号
   assert.throws(() => scanPhotoMulti([]), PhotoError);     // 空配列は安全に失敗
 });
+
+// ⑦ 自己クロックでレンズ放射歪みを補正(§5.12)──────────────────────
+// 実カメラのレンズ放射歪み(樽/糸巻き)はホモグラフィでは表せない曲がり。4 隅 finder で合わせた
+// 単一ホモグラフィは「隅で正しく内側でズレ」、高 N(モジュール≈3.6px)では復号が破綻する。
+// データを囲む自己クロック(timing tick 列)のプラムライン(=直線は直線のまま)で歪み係数を推定し、
+// 歪み認識で再標本して復元する。役割分担は不変=これは「目」。AEAD/発行者検査は独立に効く。
+
+test('柱7 photo: 糸巻き型レンズ歪み — 純ホモグラフィは破綻し自己クロック補正は復元する', () => {
+  // N=136(本番相当・モジュール≈3.6px)。lensK=0.2 の放射状歪みは透視補正の射程外(曲がり)。
+  const cord = freshCord();
+  const { png } = renderScannable(cord);
+  const img = simulatePhoto(png, { scale: 0.9, lensK: 0.2, seed: 3 });
+  assert.throws(() => scanPhoto(img, { undistort: false }), PhotoError); // 補正なし(純ホモグラフィ)は破綻
+  const back = scanPhoto(img); // 既定 = 自己クロック補正で復元
+  assert.equal(back.tip, cord.tip);
+  assert.equal(open(back, SECRET), TEXT);
+});
+
+test('柱7 photo: 樽型レンズ歪み(負)も自己クロック補正で復元する', () => {
+  // 樽型は周辺(tick のある場所)を中心へ圧縮し観測できる曲がりを自ら弱めるため糸巻きより難しい
+  //(正直な非対称)。それでも純ホモグラフィが破綻する帯で補正が復元する(plain 破綻の実証は上の
+  // 糸巻き型テストで済むので、ここは補正成功のみを確認=失敗側のブルートフォース総当たりを省き高速化)。
+  const cord = freshCord();
+  const { png } = renderScannable(cord);
+  const img = simulatePhoto(png, { scale: 0.9, lensK: -0.12, seed: 3 });
+  const back = scanPhoto(img);
+  assert.equal(back.tip, cord.tip);
+  assert.equal(open(back, SECRET), TEXT);
+});
+
+test('柱7 photo: レンズ歪み + 全方位回転(キラリティと合成)でも補正で復元する', () => {
+  // 自己クロック補正は「目」の幾何処理。リング(キラリティ)で向きを決める層と独立に重なる。
+  const cord = freshCord();
+  const { png } = renderScannable(cord);
+  const img = simulatePhoto(png, { scale: 0.85, lensK: 0.2, rotateDeg: 30, seed: 2 });
+  assert.equal(open(scanPhoto(img), SECRET), TEXT);
+});
+
+test('柱7 photo: 自己クロック補正は純粋なフォールバック — 歪み無しの写真は従来通り読める', () => {
+  // ticks を足しても通常(歪み無し)の経路は不変。{undistort:false}(補正を切る)でも歪み無しは読める
+  // = 補正は plain 失敗時だけ働く後段で、既存挙動を変えない。
+  const cord = freshCord();
+  const { png } = renderScannable(cord);
+  const clean = simulatePhoto(png, { scale: 0.85, rotateDeg: 12, blur: 1 }); // lensK 無し
+  assert.equal(open(scanPhoto(clean, { undistort: false }), SECRET), TEXT); // 純ホモグラフィで読める
+  assert.equal(open(scanPhoto(clean), SECRET), TEXT);                       // 既定でも同じ
+});

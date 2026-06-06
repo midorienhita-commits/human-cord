@@ -74,6 +74,21 @@ export function renderScannable(cord) {
   placeFinder(grid, T, T - FINDER, 0);
   placeFinder(grid, T, 0, T - FINDER);
   placeFinder(grid, T, T - FINDER, T - FINDER);
+  // 自己クロック(timing ticks): データを囲む白い GAP リングの 4 辺に交互の黒モジュールを並べる。
+  // 既知の単位座標に並ぶ基準点列 = 復号時にレンズ放射歪み(ホモグラフィでは表せない曲がり)を
+  // プラムライン法(=「直線は直線のまま」を最も満たす歪み係数を探す)で推定し補正する手掛かり。
+  // 種 docs/seed-bio-analogies.md §3「二重らせんのひねりの周期=自己クロック(timing pattern)」。
+  // データ列/行に整列して置き(=単位座標が既知)、データ・finder・幾何定数(BORDER/denom)は無改変。
+  // リング(modules 7 と T-8)はデータ(modules 9..T-10)とも finder(中央寄りは白)とも 1 モジュール白で離れる。
+  const tickLo = FINDER;        // = 7(上辺/左辺の tick リング)
+  const tickHi = T - 1 - FINDER; // = N+10(下辺/右辺の tick リング)
+  for (let i = 0; i < n; i += 2) { // 交互(偶数データ index が黒)
+    const d = BORDER + i; // データ列/行の絶対モジュール(9..N+8)
+    grid[tickLo * T + d] = 1; // 上辺(行 tickLo)
+    grid[tickHi * T + d] = 1; // 下辺(行 tickHi)
+    grid[d * T + tickLo] = 1; // 左辺(列 tickLo)
+    grid[d * T + tickHi] = 1; // 右辺(列 tickHi)
+  }
   // ピクセル化(静寂帯込み)
   const side = (T + 2 * QUIET) * SCALE;
   const pixels = Buffer.alloc(side * side, 255);
@@ -133,6 +148,35 @@ function gauss8(A, b) {
   return M.map((row) => row[n]);
 }
 
+// ── 放射状レンズ歪み(division model・依存ゼロ)──────────────────
+// 実カメラのレンズは光線を放射状に曲げる(樽型/糸巻き型)。これは透視変換(ホモグラフィ)
+// では表せない曲がりで、4 隅 finder で合わせた単一ホモグラフィは「隅で正しく内側でズレる」。
+// 高 N(モジュール ≈3.6px)では僅かなズレでも標本点が隣モジュールに落ちて復号が破綻する。
+//
+// モデルは Fitzgibbon の division model(歪み中心 c のまわり、正規化半径 R):
+//   undistort(歪んだ点 p → 理想点): ideal = c + (p-c) / (1 + k·ρ²),  ρ=|p-c|/R
+//   distort(理想点 q → 歪んだ点):    r_u=|q-c|/R を満たす r_d を ru = s/(1+k s²) から解く(s=r_d/R)。
+// 中心 c と只 1 つの係数 k で表す素朴な 1 次モデル(計算非依存性: 鉄板技術のみ)。係数の意味は
+// κ=k/R² だけ(R は正規化の自由度)ので、シミュレータと復号で R が違っても同じ歪み場を再現できる。
+function lensUndistort(x, y, cx, cy, R, k) {
+  const dx = x - cx;
+  const dy = y - cy;
+  const f = 1 / (1 + k * (dx * dx + dy * dy) / (R * R));
+  return [cx + dx * f, cy + dy * f];
+}
+function lensDistort(x, y, cx, cy, R, k) {
+  if (k === 0) return [x, y];
+  const dx = x - cx;
+  const dy = y - cy;
+  const ru = Math.hypot(dx, dy) / R;
+  if (ru < 1e-9) return [x, y];
+  const disc = 1 - 4 * k * ru * ru;
+  if (disc <= 0) return [x, y]; // 過大歪み: 安全側で素通し(復号は別経路で失敗する)
+  const s = (1 - Math.sqrt(disc)) / (2 * k * ru); // 小さい根(k→0 で s→ru)
+  const f = s / ru; // = r_d / r_u
+  return [cx + dx * f, cy + dy * f];
+}
+
 // バイリニア標本(グレースケール)。範囲外は 255(白)。
 function sampleBilinear(pixels, w, h, x, y) {
   if (x < 0 || y < 0 || x > w - 1 || y > h - 1) return 255;
@@ -190,14 +234,17 @@ function moduleDarkFrac(pixels, w, h, H, ucx, ucy, ustep, thr, offs) {
  * @param {Buffer} png 担体(renderScannable の出力)
  * @param {{scale?:number, rotateDeg?:number, tiltX?:number, tiltY?:number, tx?:number, ty?:number,
  *          canvas?:number, background?:number, blur?:number, brightness?:number, noise?:number, seed?:number,
- *          occlude?:{x:number,y:number,w:number,h:number,value?:number}}} [opts]
+ *          lensK?:number, occlude?:{x:number,y:number,w:number,h:number,value?:number}}} [opts]
+ *   lensK = 放射状レンズ歪み係数(division model)。0=歪み無し(従来の純ホモグラフィ)。正=糸巻き型・
+ *     負=樽型(中心まわり、正規化半径=キャンバス半幅)。実カメラの未モデル化要因 — ホモグラフィでは
+ *     表せない曲がりを足す。歪み中心は担体中心(撮影が中心寄せ前提=正直な限界。tx/ty で偏心すると残差)。
  *   occlude = 指/影/反射で覆う矩形(キャンバス比 [0,1]、value=覆いの輝度・既定 30=暗い指)。フレームごとに
  *   位置を変えると「単フレームでは欠ける/複数フレーム融合で埋まる」を作れる(§5.11)。
  * @returns {Buffer} 写真風 PNG(背景込み・劣化込み)
  */
 export function simulatePhoto(png, opts = {}) {
   const { scale = 1, rotateDeg = 0, tiltX = 0, tiltY = 0, tx = 0, ty = 0,
-    background = 210, blur = 0, brightness = 0, noise = 0, seed = 1, occlude = null } = opts;
+    background = 210, blur = 0, brightness = 0, noise = 0, seed = 1, lensK = 0, occlude = null } = opts;
   const { w: cw, h: ch, pixels: carrier } = decodePng(png);
   const S = cw; // 担体は正方
   const canvas = Math.round((opts.canvas || S * 1.6));
@@ -220,11 +267,17 @@ export function simulatePhoto(png, opts = {}) {
   const carrierCorners = [[0, 0], [S - 1, 0], [S - 1, S - 1], [0, S - 1]];
 
   // 逆ワープ(scene→carrier)。各 scene 画素に carrier 画素を引き戻し、穴を作らない。
+  // レンズ歪みがあれば、出力(=歪んだセンサ)画素をまず undistort して「理想センサ座標」に直し、
+  // それをホモグラフィで carrier へ。こうして得た画像は carrier が放射状に曲がった「写真」になる。
   const sceneToCarrier = solveHomography(dest, carrierCorners);
+  const lR = canvas / 2; // 歪み正規化半径(中心 cx,cy)
   let pixels = Buffer.alloc(canvas * canvas, background);
   for (let Y = 0; Y < canvas; Y++) {
     for (let X = 0; X < canvas; X++) {
-      const [x, y] = sceneToCarrier(X + 0.5, Y + 0.5);
+      let sx = X + 0.5;
+      let sy = Y + 0.5;
+      if (lensK !== 0) [sx, sy] = lensUndistort(sx, sy, cx, cy, lR, lensK);
+      const [x, y] = sceneToCarrier(sx, sy);
       if (x >= 0 && y >= 0 && x <= cw - 1 && y <= ch - 1) {
         pixels[Y * canvas + X] = Math.round(sampleBilinear(carrier, cw, ch, x, y));
       }
@@ -342,8 +395,8 @@ function convexHull(pts) {
 
 // finder 候補から 4 隅を選び、リング(キラリティ標識=重心ピクセルが白)を識別する。
 //   向きの割り当て(どれが TL/TR/BR/BL か)は scanPhoto 側で「リング=物理 TL」を起点に行う。
-function findFinders(pixels, w, h, thr) {
-  const comps = connectedComponents(pixels, w, h, thr);
+//   pickFinders は連結成分を引数に取る(自己クロック検出でも同じ comps を使い回すため)。
+function pickFinders(comps, pixels, w, h, thr) {
   // minArea は絶対値(極小ノイズ/塩胡椒の単画素を除く)。finder の絶対サイズはモジュール尺に依り
   // 画像全体に依らないので、画像サイズ比で決めると大きい担体で finder を弾く(=バグだった)。
   const minArea = 30;
@@ -376,6 +429,9 @@ function findFinders(pixels, w, h, thr) {
   if (ringCount !== 1) ringIndex = -1; // 0 個 or 複数なら不確定 → scanPhoto が全候補を試す
   return { corners, ringIndex };
 }
+function findFinders(pixels, w, h, thr) {
+  return pickFinders(connectedComponents(pixels, w, h, thr), pixels, w, h, thr);
+}
 
 // [TL,TR,BR,BL] 対応から、単位正方(0..1)→ピクセルのホモグラフィ H と N(データ辺長)推定を返す(幾何のみ)。
 function cornerHomography([TL, TR, BR, BL]) {
@@ -403,23 +459,30 @@ function sampleDarkGrid(pixels, w, h, thr, H, N, offs) {
   return grid;
 }
 
-// 与えた [TL,TR,BR,BL] 対応でホモグラフィ補正 → モジュール再標本 → matrixToCord(単一フレーム)。
-//   N は finder 間隔/面積から推定し、ヘッダ magic+RS が通る候補をブルートフォース。
+// 単位正方→ピクセルの写像 map((u,v))->[px,py] でモジュールを再標本 → matrixToCord(単一フレーム)。
+//   map は純ホモグラフィ(従来)でも、歪み認識(ホモグラフィ→放射状 distort の合成)でもよい — どちらも
+//   同じ「単位座標→読み取り画素」の契約なので、標本以降は共通化できる。
+//   N は推定値 nEst のまわりをブルートフォース(誤 N は magic+RS が通らず安全に弾かれる)。
 //   各モジュールは offs×offs 点の多数決(frac>0.5)で読む(§5.10 高 N 頑健化)。
-//   復号できなければ null(向き/順序が誤りの可能性=呼び出し側が別候補を試す)。
-function decodeWithCorners(pixels, w, h, thr, ordering, offs) {
-  const { H, nEst } = cornerHomography(ordering);
-  for (let d = 0; d <= 20; d++) {
+//   復号できなければ null(向き/順序/歪み係数が誤りの可能性=呼び出し側が別候補を試す)。
+function decodeWithMapping(pixels, w, h, thr, map, nEst, offs, maxD = 20) {
+  for (let d = 0; d <= maxD; d++) {
     for (const dn of d === 0 ? [0] : [d, -d]) {
       const N = nEst + dn;
       if (N < 1) continue;
-      const grid = sampleDarkGrid(pixels, w, h, thr, H, N, offs);
+      const grid = sampleDarkGrid(pixels, w, h, thr, map, N, offs);
       const bits = new Uint8Array(N * N);
       for (let i = 0; i < bits.length; i++) bits[i] = grid[i] > 0.5 ? 1 : 0; // フレーム内多数決
       try { return matrixToCord(bits); } catch { /* 次の N */ }
     }
   }
   return null;
+}
+
+// 与えた [TL,TR,BR,BL] 対応(純ホモグラフィ=従来経路)で復号。歪みは無いものとして標本する。
+function decodeWithCorners(pixels, w, h, thr, ordering, offs) {
+  const { H, nEst } = cornerHomography(ordering);
+  return decodeWithMapping(pixels, w, h, thr, H, nEst, offs);
 }
 
 // 起点 k(物理 TL)から巡回順に [TL,TR,BR,BL] を並べる。rot=順(非鏡像)/ rev=逆(鏡像)。
@@ -438,14 +501,251 @@ function frameGeometry(pixels, w, h, thr) {
   return { sorted, ringPos };
 }
 
+// ── 自己クロック(timing ticks)→ 放射状レンズ歪みの推定(§5.12)──────────
+// finder 四隅で合わせる単一ホモグラフィは透視には厳密だが、実カメラの放射状レンズ歪み
+// (樽/糸巻き=ホモグラフィでは表せない曲がり)は補えない。データを囲む自己クロックの tick 列は
+// 歪みが無ければ直線・あれば弓なりに反る。その反りから歪み係数を推定し、標本時に打ち消す。
+
+// tick(自己クロックの小さな黒正方)を 4 辺のリングから拾い、辺ごとにグループ化する。
+// finder 四隅 sorted(巡回順)の各辺=finder 中心を結ぶ弦。tick はその弦から内側へ約 4 モジュール
+// (renderScannable の tickLo/tickHi=finder 中心から 4 モジュール内側)に一列。
+function detectTickLines(comps, sorted, modulePx) {
+  const mp = modulePx;
+  const qcx = (sorted[0].cx + sorted[1].cx + sorted[2].cx + sorted[3].cx) / 4;
+  const qcy = (sorted[0].cy + sorted[1].cy + sorted[2].cy + sorted[3].cy) / 4;
+  // tick 候補: ほぼ 1 モジュールの充実した小正方(finder=大、データ塊=不定形 を除く)。
+  const ticks = comps.filter((c) =>
+    c.area >= 0.25 * mp * mp && c.area <= 3 * mp * mp &&
+    c.fill >= 0.5 && c.aspect >= 0.55 && c.aspect <= 1.8);
+  // 各 tick 候補を、最も近い辺(finder 中心の弦)へ「内向き垂直距離・辺方向位置」で割り当てる。
+  // 候補には perpendicular distance dp(内向き)も保持する(後でレールにロックして混入を排除)。
+  const raw = [[], [], [], []]; // 4 辺(各 {x,y,dp})
+  for (const c of ticks) {
+    let bestEdge = -1;
+    let bestErr = Infinity;
+    let bestDp = 0;
+    for (let e = 0; e < 4; e++) {
+      const A = sorted[e];
+      const B = sorted[(e + 1) % 4];
+      const ex = B.cx - A.cx;
+      const ey = B.cy - A.cy;
+      const len = Math.hypot(ex, ey);
+      if (len < 1e-6) continue;
+      const ux = ex / len;
+      const uy = ey / len;
+      let nx = -uy;
+      let ny = ux; // 法線
+      if ((qcx - A.cx) * nx + (qcy - A.cy) * ny < 0) { nx = -nx; ny = -ny; } // 内向きへ
+      const t = ((c.cx - A.cx) * ux + (c.cy - A.cy) * uy) / len; // 辺方向の位置 [0,1]
+      const dp = (c.cx - A.cx) * nx + (c.cy - A.cy) * ny;        // 内向き垂直距離(≒ 4·mp)
+      if (t < 0.04 || t > 0.96 || dp < 1.5 * mp || dp > 6.5 * mp) continue;
+      const err = Math.abs(dp - 4 * mp);
+      if (err < bestErr) { bestErr = err; bestEdge = e; bestDp = dp; }
+    }
+    if (bestEdge >= 0) raw[bestEdge].push({ x: c.cx, y: c.cy, dp: bestDp });
+  }
+  // レールにロック: tick 列は finder 中心から一定の内向き距離(≒4 モジュール)に並び、その内側に
+  // データは無い(分離リング)。候補の dp 中央値をレールとし、±1.2·mp 内だけを残す。これで「帯に
+  // 紛れ込んだデータビット(より内側=より大きい dp)」を排除する(finder 面積由来の mp 誤差にも頑健)。
+  const lines = [];
+  for (const cand of raw) {
+    if (cand.length < 4) continue;
+    const dps = cand.map((p) => p.dp).sort((a, b) => a - b);
+    const rail = dps[dps.length >> 1];
+    const kept = cand.filter((p) => Math.abs(p.dp - rail) <= 1.2 * mp).map((p) => ({ x: p.x, y: p.y }));
+    if (kept.length >= 4) lines.push(kept);
+  }
+  return lines;
+}
+
+// 点群の主軸(全最小二乗)の固有値 {lmin,lmax}。lmin=垂直残差の二乗和, lmax=主軸方向の広がり。
+function lineShape(pts) {
+  const n = pts.length;
+  let mx = 0;
+  let my = 0;
+  for (const p of pts) { mx += p.x; my += p.y; }
+  mx /= n; my /= n;
+  let Sxx = 0;
+  let Sxy = 0;
+  let Syy = 0;
+  for (const p of pts) {
+    const dx = p.x - mx;
+    const dy = p.y - my;
+    Sxx += dx * dx; Sxy += dx * dy; Syy += dy * dy;
+  }
+  const tr = Sxx + Syy;
+  const root = Math.sqrt((Sxx - Syy) * (Sxx - Syy) + 4 * Sxy * Sxy);
+  return { lmin: (tr - root) / 2, lmax: (tr + root) / 2 };
+}
+
+// プラムライン法: 「直線(tick 列)は undistort 後も直線」を最も満たす歪み係数 k を探す。
+//   k は放射状歪みのみ・1 次・中心≈担体中心という素朴モデルの 1 パラメータ(正直な限界)。
+//   コストは**スケール不変**な垂直分散比 lmin/(lmin+lmax)(=直線らしさ)の総和にする。
+//   単純な垂直残差の和だと「k→大で全点を中心へ収縮させれば残差が下がる」退化で k が発散するため。
+//   粗探索で谷を囲んでから黄金分割で精密化(残差は局所最小を持ちうるので単峰仮定に頼らない)。
+function estimateLensK(lines, cx, cy, R) {
+  const cost = (k) => {
+    let s = 0;
+    for (const line of lines) {
+      const { lmin, lmax } = lineShape(line.map((p) => {
+        const [x, y] = lensUndistort(p.x, p.y, cx, cy, R, k);
+        return { x, y };
+      }));
+      s += lmin / (lmin + lmax + 1e-9); // 直線=0, 等方塊=0.5(スケール不変)
+    }
+    return s;
+  };
+  let lo = -1.5;
+  let hi = 1.5;
+  let bestK = 0;
+  let bestC = Infinity;
+  for (let k = lo; k <= hi + 1e-9; k += 0.1) { // 粗探索で谷を囲む
+    const c = cost(k);
+    if (c < bestC) { bestC = c; bestK = k; }
+  }
+  lo = bestK - 0.1;
+  hi = bestK + 0.1;
+  const phi = (Math.sqrt(5) - 1) / 2;
+  let c1 = hi - phi * (hi - lo);
+  let c2 = lo + phi * (hi - lo);
+  let f1 = cost(c1);
+  let f2 = cost(c2);
+  for (let i = 0; i < 40; i++) {
+    if (f1 < f2) { hi = c2; c2 = c1; f2 = f1; c1 = hi - phi * (hi - lo); f1 = cost(c1); }
+    else { lo = c1; c1 = c2; f1 = f2; c2 = lo + phi * (hi - lo); f2 = cost(c2); }
+  }
+  return (lo + hi) / 2;
+}
+
+// 自己クロックから真のモジュール尺を測る。tick は 2 モジュール間隔なので、undistort 後の
+// 隣接 tick 間隔の中央値 /2 が真の 1 モジュール画素幅。finder 面積は周辺の放射状拡大で肥大して
+// 信用できない(=nEst が大きくずれる原因)が、tick 列の間隔は局所的で頑健な尺度参照になる
+// (種 §3「ひねりの周期=自己クロックが撮影スケール変動に強い標本格子を与える」)。
+function moduleSizeFromTicks(lines, cx, cy, R, k) {
+  const gaps = [];
+  for (const line of lines) {
+    const u = line.map((p) => {
+      const [x, y] = lensUndistort(p.x, p.y, cx, cy, R, k);
+      return { x, y };
+    });
+    const n = u.length;
+    let mx = 0;
+    let my = 0;
+    for (const p of u) { mx += p.x; my += p.y; }
+    mx /= n; my /= n;
+    let Sxx = 0;
+    let Sxy = 0;
+    let Syy = 0;
+    for (const p of u) { const dx = p.x - mx; const dy = p.y - my; Sxx += dx * dx; Sxy += dx * dy; Syy += dy * dy; }
+    const ang = 0.5 * Math.atan2(2 * Sxy, Sxx - Syy); // 主軸方向
+    const ax = Math.cos(ang);
+    const ay = Math.sin(ang);
+    const proj = u.map((p) => (p.x - mx) * ax + (p.y - my) * ay).sort((a, b) => a - b);
+    for (let i = 1; i < proj.length; i++) gaps.push(proj[i] - proj[i - 1]);
+  }
+  if (!gaps.length) return null;
+  gaps.sort((a, b) => a - b);
+  return gaps[gaps.length >> 1] / 2; // 中央値 /2(tick は 2 モジュール間隔)
+}
+
+// 純ホモグラフィ(従来=歪み無し前提)で復号を試みる。読めなければ null。
+function tryPlain(pixels, w, h, thr, offs) {
+  let geo;
+  try { geo = frameGeometry(pixels, w, h, thr); }
+  catch { return null; } // finder 不検出 → 純ホモグラフィでは読めない
+  const { sorted, ringPos } = geo;
+  const starts = ringPos >= 0 ? [ringPos] : [0, 1, 2, 3];
+  for (const s of starts) {
+    for (const order of [rotOrder(sorted, s), revOrder(sorted, s)]) { // 順=非鏡像 / 逆=鏡像
+      const cord = decodeWithCorners(pixels, w, h, thr, order, offs);
+      if (cord) return cord;
+    }
+  }
+  if (ringPos >= 0) { // リング起点で全滅 → 念のため全起点(リング誤検出/極端な劣化の保険)
+    for (let s = 0; s < 4; s++) {
+      for (const order of [rotOrder(sorted, s), revOrder(sorted, s)]) {
+        const cord = decodeWithCorners(pixels, w, h, thr, order, offs);
+        if (cord) return cord;
+      }
+    }
+  }
+  return null;
+}
+
+// 自己クロック補正: tick 列のプラムラインで放射状レンズ歪み k を推定し、歪み認識で再標本して復号。
+//   標本は「単位座標→純ホモグラフィ(歪み無し finder 中心)→ forward distort で歪んだ実画素」を読む。
+//   tick が足りない/歪みが≒0 なら null(plain 既敗のため無駄打ちしない)。
+function scanDistorted(pixels, w, h, thr, offs) {
+  const comps = connectedComponents(pixels, w, h, thr);
+  let finders;
+  try { finders = pickFinders(comps, pixels, w, h, thr); }
+  catch { return null; } // finder すら無ければ歪み補正もできない
+  const { corners, ringIndex } = finders;
+  const qcx = (corners[0].cx + corners[1].cx + corners[2].cx + corners[3].cx) / 4;
+  const qcy = (corners[0].cy + corners[1].cy + corners[2].cy + corners[3].cy) / 4;
+  const sorted = [...corners].sort((a, b) =>
+    Math.atan2(a.cy - qcy, a.cx - qcx) - Math.atan2(b.cy - qcy, b.cx - qcx));
+  const ringPos = ringIndex >= 0 ? sorted.indexOf(corners[ringIndex]) : -1;
+  const modulePx = (Math.sqrt(corners[0].area) + Math.sqrt(corners[1].area) +
+    Math.sqrt(corners[2].area) + Math.sqrt(corners[3].area)) / 4 / FINDER;
+  const R = (Math.hypot(corners[0].cx - qcx, corners[0].cy - qcy) +
+    Math.hypot(corners[1].cx - qcx, corners[1].cy - qcy) +
+    Math.hypot(corners[2].cx - qcx, corners[2].cy - qcy) +
+    Math.hypot(corners[3].cx - qcx, corners[3].cy - qcy)) / 4;
+  const lines = detectTickLines(comps, sorted, modulePx);
+  if (lines.length < 2) return null; // 自己クロックが足りない → 補正不能(安全に諦める)
+  const k1 = estimateLensK(lines, qcx, qcy, R);
+  if (Math.abs(k1) < 5e-3) return null; // 歪み≒0(plain と同じ)= 既に失敗済のため無駄打ち回避
+  // N(データ辺長)を自己クロックから決める。finder 面積は周辺拡大で肥大し nEst が大きくずれるので、
+  // tick 間隔から真のモジュール尺 mp を出し、undistort した finder 中心の平均辺長 / mp - 11 を N とする。
+  const mp = moduleSizeFromTicks(lines, qcx, qcy, R, k1);
+  if (!mp || mp < 1) return null;
+  const undC = sorted.map((f) => {
+    const [x, y] = lensUndistort(f.cx, f.cy, qcx, qcy, R, k1);
+    return { cx: x, cy: y };
+  });
+  let perim = 0;
+  for (let e = 0; e < 4; e++) {
+    const A = undC[e];
+    const B = undC[(e + 1) % 4];
+    perim += Math.hypot(B.cx - A.cx, B.cy - A.cy);
+  }
+  const nEst = Math.round((perim / 4) / mp - 11); // 平均辺長 ≈ (N+11)·mp
+  if (nEst < 1) return null;
+  // 起点(物理 TL)候補: リングが一意なら其処を先頭に、全起点 × 順/逆(鏡像)を試す。
+  const starts = ringPos >= 0 ? [ringPos, 0, 1, 2, 3] : [0, 1, 2, 3];
+  const seen = new Set();
+  for (const s of starts) {
+    if (seen.has(s)) continue;
+    seen.add(s);
+    for (const order of [rotOrder(sorted, s), revOrder(sorted, s)]) {
+      // finder 中心を undistort → 純ホモグラフィ部 H を fit。標本は forward distort で歪んだ画素を読む。
+      const und = order.map((f) => {
+        const [x, y] = lensUndistort(f.cx, f.cy, qcx, qcy, R, k1);
+        return { cx: x, cy: y, area: f.area };
+      });
+      const { H } = cornerHomography(und);
+      const map = (u, v) => {
+        const [px, py] = H(u, v);
+        return lensDistort(px, py, qcx, qcy, R, k1);
+      };
+      // nEst は自己クロック由来で正確 → 近傍だけ探索(±6)。誤 N は magic+RS が弾く。
+      const cord = decodeWithMapping(pixels, w, h, thr, map, nEst, offs, 6);
+      if (cord) return cord;
+    }
+  }
+  return null;
+}
+
 /**
- * scanPhoto: 写真風 PNG → cord。finder 検出 → 向き決定(キラリティ)→ ホモグラフィ補正 → 再標本 → RS 復号。
- *   向きの曖昧性(四隅同形 finder では面内回転 ±45° が限界)を、TL のリング(重心が白)で破る。
- *   リングを物理 TL の起点とし、4 隅を角度順(巡回)に並べて [TL,TR,BR,BL] を一意に決める
- *   → 全方位(0–360°)+ 鏡像(裏返し)に対応。リング不検出時は全 4 起点 × 2 方向を試す保険つき。
+ * scanPhoto: 写真風 PNG → cord。finder 検出 → 向き決定(キラリティ)→ 補正 → 再標本 → RS 復号。
+ *   向きの曖昧性(四隅同形 finder では面内回転 ±45° が限界)を TL のリング(重心が白)で破り、
+ *   全方位(0–360°)+ 鏡像に対応。まず純ホモグラフィ(従来=速い)、失敗したら自己クロック補正で
+ *   放射状レンズ歪みを推定し undistort して再挑戦する(§5.12)。役割分担は不変=これは「目」。
  * @param {Buffer} png
- * @param {{subsamples?:number}} [opts] subsamples = 1 モジュールあたりの 1 辺標本数(既定 3 = 3×3 多数決)。
- *   1 を渡すと従来の中心 1 点標本(ノイズに弱い・比較用)。大きいほどノイズ余裕↑・標本コスト↑。
+ * @param {{subsamples?:number, undistort?:boolean}} [opts]
+ *   subsamples = 1 モジュールあたりの 1 辺標本数(既定 3 = 3×3 多数決)。1 は中心 1 点(ノイズに弱い・比較用)。
+ *   undistort = false で自己クロック補正を使わない(レンズ歪み下で「補正前=✗」を示す比較用。既定は補正あり)。
  * @returns {object} cord
  */
 export function scanPhoto(png, opts = {}) {
@@ -453,26 +753,17 @@ export function scanPhoto(png, opts = {}) {
   const offs = subOffsets(k);
   const { w, h, pixels } = decodePng(png);
   const thr = otsuThreshold(pixels);
-  const { sorted, ringPos } = frameGeometry(pixels, w, h, thr);
-
-  // 起点(物理 TL)候補: リングが一意なら其処、なければ全 4 隅。各起点で順方向/逆方向(鏡像)を試す。
-  const starts = ringPos >= 0 ? [ringPos] : [0, 1, 2, 3];
-  for (const s of starts) {
-    for (const ordering of [rotOrder(sorted, s), revOrder(sorted, s)]) { // 順=非鏡像 / 逆=鏡像
-      const cord = decodeWithCorners(pixels, w, h, thr, ordering, offs);
-      if (cord) return cord;
-    }
+  // ① 純ホモグラフィ(従来)。歪み無し/軽微はこれで読め、速い。
+  const plain = tryPlain(pixels, w, h, thr, offs);
+  if (plain) return plain;
+  // {undistort:false} は自己クロック補正を使わない(レンズ歪み下で「補正前=✗」を見せる比較用)。
+  if (opts.undistort === false) {
+    throw new PhotoError('decode failed (純ホモグラフィのみ・自己クロック補正は無効)');
   }
-  // リング起点で全滅 → 念のため全起点もさらう(リング誤検出/極端な劣化の保険)。
-  if (ringPos >= 0) {
-    for (let s = 0; s < 4; s++) {
-      for (const ordering of [rotOrder(sorted, s), revOrder(sorted, s)]) {
-        const cord = decodeWithCorners(pixels, w, h, thr, ordering, offs);
-        if (cord) return cord;
-      }
-    }
-  }
-  throw new PhotoError('decode failed (finder 検出済だが全向き/全 N で復号不可)');
+  // ② 自己クロック補正: tick 列のプラムラインで放射状レンズ歪みを推定し、歪み認識で再標本(§5.12)。
+  const corrected = scanDistorted(pixels, w, h, thr, offs);
+  if (corrected) return corrected;
+  throw new PhotoError('decode failed (純ホモグラフィ + 自己クロック補正の双方で復号不可)');
 }
 
 /**

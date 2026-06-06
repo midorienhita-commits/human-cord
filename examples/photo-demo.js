@@ -122,6 +122,28 @@ try {
 writeFileSync('human-cord-photo-occluded.png', occFrames[0]);
 console.log('  遮蔽フレーム例    : human-cord-photo-occluded.png(指/影で 1/3 帯が隠れた 1 枚)');
 
-console.log('\n結論: 位置・回転(全周)・傾きが未知の「写真」からでも、finder で見つけ・キラリティで向きを決め・');
-console.log('      透視補正し・多点標本の多数決でノイズを均し・複数フレームの融合で遮蔽を埋め・RS で訂正して');
-console.log('      cord を復元できた。実カメラ撮影/端末内 AI 抽出・有機担体・録画リプレイ耐性は継続(§7)。');
+// --- ⑦ 自己クロックで放射状レンズ歪みを補正(§5.12): 純ホモグラフィの射程外を埋める ---
+console.log('\n--- ⑦ 自己クロック(timing tick)でレンズ放射歪みを補正(§5.12)---');
+console.log('     実カメラのレンズ放射歪み(樽/糸巻き)はホモグラフィでは表せない曲がり。4 隅 finder で');
+console.log('     合わせた単一ホモグラフィは「隅で正しく内側でズレ」、高 N(モジュール≈3.6px)で破綻する。');
+console.log('     データを囲む自己クロック(tick 列)のプラムライン(=直線は直線のまま)で歪み係数を推定し、');
+console.log('     歪み認識で再標本して復元する。種 §3「二重らせんのひねりの周期=自己クロック」。');
+console.log('     ' + modules + '×' + modules + ' で比較(plain=純ホモグラフィ / self-clock=自己クロック補正):');
+for (const lensK of [0.1, 0.15, 0.2, 0.3, -0.1, -0.12, -0.2]) {
+  const img = simulatePhoto(png, { scale: 0.9, lensK, seed: 3 });
+  const read = (opts) => {
+    try { return scanPhoto(img, opts).tip === cord.tip ? '✓' : '△tip'; }
+    catch { return '✗'; }
+  };
+  const kind = lensK >= 0 ? '糸巻き' : '樽　';
+  console.log('  lensK=' + String(lensK).padStart(5) + '(' + kind + ')  plain=' + read({ undistort: false }) + '   self-clock=' + read({}));
+}
+console.log('  → plain は |lensK|≈0.1 で破綻、self-clock は糸巻き +0.3 / 樽 -0.15 まで復元。');
+console.log('    (樽型は周辺=tick の場所を中心へ圧縮し観測できる曲がりを自ら弱めるため糸巻きより難しい=正直な非対称。');
+console.log('     歪み中心≈担体中心の前提のため強透視との同時はずれる。実レンズ歪み・実カメラは継続)');
+writeFileSync('human-cord-photo-lens.png', simulatePhoto(png, { scale: 0.9, lensK: 0.25, seed: 3 }));
+console.log('  歪み写真例        : human-cord-photo-lens.png(糸巻き型 lensK=0.25)');
+
+console.log('\n結論: 位置・回転(全周)・傾き・レンズ放射歪みが未知の「写真」からでも、finder で見つけ・キラリティで');
+console.log('      向きを決め・自己クロックで歪みを推定して補正し・多点標本の多数決でノイズを均し・複数フレームの');
+console.log('      融合で遮蔽を埋め・RS で訂正して cord を復元できた。実カメラ撮影/端末内 AI 抽出・有機担体は継続(§7)。');

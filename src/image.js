@@ -127,6 +127,7 @@ export function decodePng(buf) {
   let h = 0;
   let colorType = -1;
   let bitDepth = -1;
+  let interlace = 0;
   const idats = [];
   while (off + 8 <= buf.length) {
     const len = buf.readUInt32BE(off);
@@ -137,6 +138,7 @@ export function decodePng(buf) {
       h = data.readUInt32BE(4);
       bitDepth = data[8];
       colorType = data[9];
+      interlace = data[12];
     } else if (type === 'IDAT') {
       idats.push(data);
     } else if (type === 'IEND') {
@@ -144,20 +146,57 @@ export function decodePng(buf) {
     }
     off += 12 + len;
   }
-  if (colorType !== 0 || bitDepth !== 8) {
-    throw new ImageCarrierError('unsupported PNG (need 8-bit grayscale)');
+  // 8-bit の グレー(0)/真彩 RGB(2)/グレー+α(4)/真彩+α(6) に対応。合成担体は colorType 0・フィルタ 0 だが、
+  // 実カメラ画像(System.Drawing 等で PNG 化)はカラー + 各種 PNG フィルタを使う。RGB は輝度でグレー化する。
+  const CH = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
+  if (CH === undefined || bitDepth !== 8) {
+    throw new ImageCarrierError(`unsupported PNG (need 8-bit gray/RGB/RGBA; got colorType=${colorType} depth=${bitDepth})`);
   }
+  if (interlace !== 0) throw new ImageCarrierError('unsupported PNG (interlaced)');
   let raw;
   try {
     raw = zlib.inflateSync(Buffer.concat(idats));
   } catch (e) {
     throw new ImageCarrierError('IDAT inflate failed: ' + e.message);
   }
-  if (raw.length !== h * (w + 1)) throw new ImageCarrierError('IDAT size mismatch');
+  const stride = w * CH;
+  if (raw.length !== h * (stride + 1)) throw new ImageCarrierError('IDAT size mismatch');
+
+  // PNG フィルタ解除(行ごと・bpp 認識)→ 輝度グレー化。None/Sub/Up/Average/Paeth に対応。
+  let cur = Buffer.alloc(stride);
+  let prev = Buffer.alloc(stride);
   const pixels = Buffer.alloc(w * h);
+  const paeth = (a, b, c) => {
+    const p = a + b - c;
+    const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+    return pa <= pb && pa <= pc ? a : (pb <= pc ? b : c);
+  };
   for (let y = 0; y < h; y++) {
-    if (raw[y * (w + 1)] !== 0) throw new ImageCarrierError('unsupported PNG scanline filter');
-    raw.copy(pixels, y * w, y * (w + 1) + 1, y * (w + 1) + 1 + w);
+    const ft = raw[y * (stride + 1)];
+    const src = y * (stride + 1) + 1;
+    for (let i = 0; i < stride; i++) {
+      const x = raw[src + i];
+      const a = i >= CH ? cur[i - CH] : 0; // 左
+      const b = prev[i];                   // 上
+      const c = i >= CH ? prev[i - CH] : 0; // 左上
+      let v;
+      switch (ft) {
+        case 0: v = x; break;
+        case 1: v = x + a; break;
+        case 2: v = x + b; break;
+        case 3: v = x + ((a + b) >> 1); break;
+        case 4: v = x + paeth(a, b, c); break;
+        default: throw new ImageCarrierError('unsupported PNG scanline filter ' + ft);
+      }
+      cur[i] = v & 0xff;
+    }
+    for (let px = 0; px < w; px++) {
+      const o = px * CH;
+      pixels[y * w + px] = CH <= 2
+        ? cur[o] // グレー(+α)
+        : (cur[o] * 299 + cur[o + 1] * 587 + cur[o + 2] * 114 + 500) / 1000 | 0; // RGB→輝度
+    }
+    const tmp = prev; prev = cur; cur = tmp; // prev←この行(次行の「上」)。cur は次行で全上書きされる
   }
   return { w, h, pixels };
 }

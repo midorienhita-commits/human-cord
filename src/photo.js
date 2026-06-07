@@ -677,6 +677,54 @@ function tryPlain(pixels, w, h, thr, offs) {
   return null;
 }
 
+// ── 歪み認識マッピング(scanDistorted=単フレーム と scanPhotoMulti=融合 で共有・§5.12/§5.14)──
+// winding 済 order=[TL,TR,BR,BL] を「単位座標→読み取り画素」へ。finder 中心を undistort して純ホモグラフィ
+// H を fit、標本時に forward distort で歪んだ実画素を読む(lensDistort∘H)。歪み k1 を 1 箇所で扱う単一の真実。
+function distortedMapping(order, qcx, qcy, R, k1) {
+  const und = order.map((f) => {
+    const [x, y] = lensUndistort(f.cx, f.cy, qcx, qcy, R, k1);
+    return { cx: x, cy: y, area: f.area };
+  });
+  const { H } = cornerHomography(und);
+  return (u, v) => {
+    const [px, py] = H(u, v);
+    return lensDistort(px, py, qcx, qcy, R, k1);
+  };
+}
+
+// undistort した finder 四角形の平均辺長 / 自己クロック由来モジュール尺 mp から N(データ辺長)を推定。
+// finder 面積由来の nEst は周辺拡大で肥大するので、tick の mp を尺度に使う(§5.12 で踏んだ罠の回避)。
+function undistortedNEst(quad, qcx, qcy, R, k1, mp) {
+  const und = quad.map((f) => {
+    const [x, y] = lensUndistort(f.cx, f.cy, qcx, qcy, R, k1);
+    return { cx: x, cy: y };
+  });
+  let perim = 0;
+  for (let e = 0; e < 4; e++) {
+    const A = und[e];
+    const B = und[(e + 1) % 4];
+    perim += Math.hypot(B.cx - A.cx, B.cy - A.cy);
+  }
+  return Math.round((perim / 4) / mp - 11); // 平均辺長 ≈ (N+11)·mp
+}
+
+// フレームの放射状レンズ歪み(winding 非依存)を tick から推定。tick 不足/歪み≒0 なら k1=0(=純ホモグラフィ)。
+function frameDistortion(pixels, w, h, thr, sorted) {
+  const qcx = (sorted[0].cx + sorted[1].cx + sorted[2].cx + sorted[3].cx) / 4;
+  const qcy = (sorted[0].cy + sorted[1].cy + sorted[2].cy + sorted[3].cy) / 4;
+  const R = (Math.hypot(sorted[0].cx - qcx, sorted[0].cy - qcy) + Math.hypot(sorted[1].cx - qcx, sorted[1].cy - qcy) +
+    Math.hypot(sorted[2].cx - qcx, sorted[2].cy - qcy) + Math.hypot(sorted[3].cx - qcx, sorted[3].cy - qcy)) / 4;
+  const modulePx = (Math.sqrt(sorted[0].area) + Math.sqrt(sorted[1].area) +
+    Math.sqrt(sorted[2].area) + Math.sqrt(sorted[3].area)) / 4 / FINDER;
+  let k1 = 0, mp = 0;
+  const lines = detectTickLines(connectedComponents(pixels, w, h, thr), sorted, modulePx);
+  if (lines.length >= 2) {
+    const kk = estimateLensK(lines, qcx, qcy, R);
+    if (Math.abs(kk) >= 5e-3) { k1 = kk; mp = moduleSizeFromTicks(lines, qcx, qcy, R, kk) || 0; }
+  }
+  return { qcx, qcy, R, k1, mp };
+}
+
 // 自己クロック補正: tick 列のプラムラインで放射状レンズ歪み k を推定し、歪み認識で再標本して復号。
 //   標本は「単位座標→純ホモグラフィ(歪み無し finder 中心)→ forward distort で歪んだ実画素」を読む。
 //   tick が足りない/歪みが≒0 なら null(plain 既敗のため無駄打ちしない)。
@@ -705,17 +753,7 @@ function scanDistorted(pixels, w, h, thr, offs) {
   // tick 間隔から真のモジュール尺 mp を出し、undistort した finder 中心の平均辺長 / mp - 11 を N とする。
   const mp = moduleSizeFromTicks(lines, qcx, qcy, R, k1);
   if (!mp || mp < 1) return null;
-  const undC = sorted.map((f) => {
-    const [x, y] = lensUndistort(f.cx, f.cy, qcx, qcy, R, k1);
-    return { cx: x, cy: y };
-  });
-  let perim = 0;
-  for (let e = 0; e < 4; e++) {
-    const A = undC[e];
-    const B = undC[(e + 1) % 4];
-    perim += Math.hypot(B.cx - A.cx, B.cy - A.cy);
-  }
-  const nEst = Math.round((perim / 4) / mp - 11); // 平均辺長 ≈ (N+11)·mp
+  const nEst = undistortedNEst(sorted, qcx, qcy, R, k1, mp);
   if (nEst < 1) return null;
   // 起点(物理 TL)候補: リングが一意なら其処を先頭に、全起点 × 順/逆(鏡像)を試す。
   const starts = ringPos >= 0 ? [ringPos, 0, 1, 2, 3] : [0, 1, 2, 3];
@@ -724,16 +762,8 @@ function scanDistorted(pixels, w, h, thr, offs) {
     if (seen.has(s)) continue;
     seen.add(s);
     for (const order of [rotOrder(sorted, s), revOrder(sorted, s)]) {
-      // finder 中心を undistort → 純ホモグラフィ部 H を fit。標本は forward distort で歪んだ画素を読む。
-      const und = order.map((f) => {
-        const [x, y] = lensUndistort(f.cx, f.cy, qcx, qcy, R, k1);
-        return { cx: x, cy: y, area: f.area };
-      });
-      const { H } = cornerHomography(und);
-      const map = (u, v) => {
-        const [px, py] = H(u, v);
-        return lensDistort(px, py, qcx, qcy, R, k1);
-      };
+      // finder 中心を undistort → 純ホモグラフィ H を fit、標本は forward distort で歪んだ画素を読む(§5.12)。
+      const map = distortedMapping(order, qcx, qcy, R, k1);
       // nEst は自己クロック由来で正確 → 近傍だけ探索(±6)。誤 N は magic+RS が弾く。
       const cord = decodeWithMapping(pixels, w, h, thr, map, nEst, offs, 6);
       if (cord) return cord;
@@ -799,19 +829,29 @@ export function scanPhotoMulti(pngs, opts = {}) {
       geo = frameGeometry(pixels, w, h, thr);
     } catch { continue; } // finder 不検出など → このフレームは捨てる
     if (geo.ringPos < 0) continue; // 向きを幾何的に確定できない → 融合に使わない(保険なし)
-    frames.push({ pixels, w, h, thr, sorted: geo.sorted, ringPos: geo.ringPos });
+    // 放射状レンズ歪みを winding 非依存に推定(歪み≒0/tick 不足は k1=0=純ホモグラフィ=従来挙動)。
+    const dist = frameDistortion(pixels, w, h, thr, geo.sorted);
+    frames.push({ pixels, w, h, thr, sorted: geo.sorted, ringPos: geo.ringPos, dist });
   }
   if (frames.length === 0) throw new PhotoError('融合に使えるフレームが無い(全フレームで finder/リング不検出)');
 
-  // N 中心 = 各フレーム nEst の中央値(幾何は向きに依らないので primary winding で代表)。
-  const nEsts = frames.map((f) => cornerHomography(rotOrder(f.sorted, f.ringPos)).nEst).sort((a, b) => a - b);
+  // N 中心 = 各フレーム nEst の中央値。歪みがあれば自己クロック由来(finder 面積由来は周辺拡大で肥大)。
+  const nEsts = frames.map((f) => {
+    if (f.dist.k1 && f.dist.mp >= 1) {
+      const ne = undistortedNEst(rotOrder(f.sorted, f.ringPos), f.dist.qcx, f.dist.qcy, f.dist.R, f.dist.k1, f.dist.mp);
+      if (ne >= 1) return ne;
+    }
+    return cornerHomography(rotOrder(f.sorted, f.ringPos)).nEst;
+  }).sort((a, b) => a - b);
   const nCenter = nEsts[nEsts.length >> 1];
 
   // winding(順/鏡像)はフレーム一括(同じ撮影系は全フレーム同じ巻き)。各 winding × N 候補で融合復号。
   for (const winding of [rotOrder, revOrder]) {
     const geos = frames.map((f) => {
-      const { H } = cornerHomography(winding(f.sorted, f.ringPos));
-      return { pixels: f.pixels, w: f.w, h: f.h, thr: f.thr, H };
+      const order = winding(f.sorted, f.ringPos);
+      // 歪みがあれば各フレームを scanDistorted と同じ式で整流(lensDistort∘H)、無ければ純ホモグラフィ(=従来)。
+      const map = f.dist.k1 ? distortedMapping(order, f.dist.qcx, f.dist.qcy, f.dist.R, f.dist.k1) : cornerHomography(order).H;
+      return { pixels: f.pixels, w: f.w, h: f.h, thr: f.thr, map };
     });
     for (let d = 0; d <= 20; d++) {
       for (const dn of d === 0 ? [0] : [d, -d]) {
@@ -825,7 +865,7 @@ export function scanPhotoMulti(pngs, opts = {}) {
             const ucx = (6 + mx) / denom;
             const ucy = (6 + my) / denom;
             let sum = 0; // Σ 暗さ率(フレーム横断 soft 融合)
-            for (const g of geos) sum += moduleDarkFrac(g.pixels, g.w, g.h, g.H, ucx, ucy, ustep, g.thr, offs);
+            for (const g of geos) sum += moduleDarkFrac(g.pixels, g.w, g.h, g.map, ucx, ucy, ustep, g.thr, offs);
             bits[my * N + mx] = sum * 2 > geos.length ? 1 : 0; // フレーム平均が >0.5 → 黒
           }
         }

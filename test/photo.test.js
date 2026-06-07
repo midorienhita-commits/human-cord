@@ -207,3 +207,21 @@ test('柱7 photo: 自己クロック補正は純粋なフォールバック — 
   assert.equal(open(scanPhoto(clean, { undistort: false }), SECRET), TEXT); // 純ホモグラフィで読める
   assert.equal(open(scanPhoto(clean), SECRET), TEXT);                       // 既定でも同じ
 });
+
+// ⑧ 融合 × レンズ歪み(§5.14)──────────────────────────────────────
+// §5.13 で判明した穴: scanPhotoMulti は §5.12 の歪み補正を持たず、レンズ歪み下では単フレームが
+// 読める所でも融合が全滅した(plain ホモグラフィで重ねるとフレームごとの歪みが食い違う)。
+// 各フレームを scanDistorted と同じ式(lensDistort∘H)で整流してから soft 融合する修正で塞ぐ。
+
+test('柱7 photo: 融合がレンズ歪みに対応 — 各フレームを歪み認識で整流してから soft 融合する', () => {
+  // 横帯遮蔽(各フレーム別の 1/3 帯=融合が必要)に糸巻きレンズ歪みを重ねる。どの 1 枚も遮蔽帯で
+  // 単独復号は不可(融合が要る)。歪み認識の融合で復元する(旧=純ホモグラフィ融合は同条件で全滅)。
+  const cord = freshCord();
+  const { png } = renderScannable(cord);
+  const band = (i) => ({ x: 0.27, w: 0.47, y: 0.27 + i * (0.47 / 3), h: 0.47 / 3 });
+  const frames = [0, 1, 2].map((i) => simulatePhoto(png, { scale: 0.9, noise: 0.01, lensK: 0.15, seed: 10 + i, occlude: band(i) }));
+  assert.throws(() => scanPhotoMulti([frames[1]]), PhotoError); // 1 枚は遮蔽帯で復号不可
+  const back = scanPhotoMulti(frames);
+  assert.equal(back.tip, cord.tip);
+  assert.equal(open(back, SECRET), TEXT);
+});

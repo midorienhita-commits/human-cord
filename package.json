@@ -22,6 +22,7 @@
     "demo:issue": "node examples/issue-demo.js",
     "demo:reconstruct": "node examples/reconstruct-demo.js",
     "demo:pubkey": "node examples/pubkey-demo.js",
+    "demo:budget": "node examples/budget-demo.js",
     "test": "node --test"
   },
   "engines": {

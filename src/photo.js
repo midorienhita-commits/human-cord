@@ -30,6 +30,11 @@ const RING_HOLE = 3; // TL finder の中央に空ける白い穴(モジュール
 const GAP = 2;     // finder とデータ領域の白セパレータ(モジュール)
 const BORDER = FINDER + GAP; // データ領域は各辺から BORDER モジュール内側
 
+// 撮影時にカメラが捉える、データ外の固定モジュール数(両辺合計)= finder+GAP+静寂帯。
+// renderScannable の総辺は N + 2*BORDER、撮影される PNG は静寂帯込み N + 2*(BORDER+QUIET)。
+// 可読性バジェット(src/budget.js)が「担体を横切る画素 ÷ px/module」で参照する単一の真実。
+export const SCANNABLE_OVERHEAD_MODULES = 2 * (BORDER + QUIET); // = 26
+
 /** 写真からの読み取り失敗(finder 不検出・補正破綻)を表す例外。 */
 export class PhotoError extends Error {
   constructor(message) {

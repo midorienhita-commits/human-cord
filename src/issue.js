@@ -236,3 +236,17 @@ export { FreshnessGuard } from './freshness.js';
 // 柱4 公開鍵層を採用面から再 export(adopters は issue.js だけ見れば surface 完結)。
 //   attest = 公開可能な事実に発行者署名 / verifyPublic = 公開鍵だけでオフライン検証。
 export { generateIssuerKeypair, signStatement as attest, verifyStatement as verifyPublic } from './pubkey.js';
+
+// 柱4b 真の閾値署名(k-of-n 公開検証)を採用面から再 export。
+//   発行者媒介(担体)・単一発行者公開検証(attest)に続く三つ目の検証口 = k-of-n 公開検証。
+//   秘密を一度も再構成せず本社+拠点で発行 → 公開鍵だけで誰でも検証(thresholdVerify)。
+//   採用面には鍵/群生成・安全なコーディネータ(thresholdSign は毎回新規 nonce)・公開検証のみを出す。
+//   分散二段(commit/partialSign/aggregate)は nonce の一回限り規律を要する足撃ちのため、
+//   理解した上で src/threshold.js から直接 import する(採用面には載せない)。
+export {
+  generateGroup as generateThresholdGroup,
+  generateKey as generateThresholdKey,
+  splitKey as splitThresholdShares,
+  thresholdSign,
+  verifyThreshold as thresholdVerify,
+} from './threshold.js';

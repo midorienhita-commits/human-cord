@@ -31,6 +31,10 @@ export const OVERHEAD_MODULES = SCANNABLE_OVERHEAD_MODULES; // = 26
 const HEADER_LEN = 15; // image.js: MAGIC+VERSION+len(3B) + RS パリティ10
 const RS_BLOCK = 255;  // image.js BLOCK（RS ブロック長）
 const RS_DATA = 223;   // ecc.js encodeBlocks 既定 k（1 ブロックのデータ部）
+const RS_LEN_HEADER = 4; // ecc.js encodeBlocks は data の前に u32be(data.length) を付してから
+                         // k 分割する。ゆえに実ブロック数は ceil((bytes+4)/k)。これを落とすと
+                         // bytes が境界(mod 223 ∈ {220,221,222,0})に当たった時だけ 1 ブロック過小評価し、
+                         // N が cordToMatrix と乖離する(2026-06-08 flaky の真因)。
 
 // ── 可読しきい値（px/module・実測）──────────────────────────────
 // SHARP: ぼけ無し（画面直キャプチャ等）。プローブ下限 1.8 で読取り 100%、N 非依存。
@@ -60,7 +64,7 @@ export function dataModulesForBytes(cordJsonBytes) {
   if (!Number.isInteger(cordJsonBytes) || cordJsonBytes < 1) {
     throw new RangeError('cordJsonBytes must be a positive integer');
   }
-  const blocks = Math.ceil(cordJsonBytes / RS_DATA);
+  const blocks = Math.ceil((cordJsonBytes + RS_LEN_HEADER) / RS_DATA); // +4 = encodeBlocks の長さヘッダ
   const streamBytes = HEADER_LEN + blocks * RS_BLOCK;
   return Math.ceil(Math.sqrt(streamBytes * 8)); // 正方格子に収める（cordToMatrix と同式）
 }
@@ -160,5 +164,5 @@ export function maxCordBytes({ captureWidthPx, condition = 'blur' } = {}) {
   const maxRsBytes = maxStreamBytes - HEADER_LEN;
   if (maxRsBytes < RS_BLOCK) return 0; // 1 ブロック(255B)も入らない
   const maxBlocks = Math.floor(maxRsBytes / RS_BLOCK);
-  return maxBlocks * RS_DATA;
+  return maxBlocks * RS_DATA - RS_LEN_HEADER; // -4 = encodeBlocks の長さヘッダ分を payload から差し引く
 }

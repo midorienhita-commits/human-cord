@@ -11,6 +11,7 @@
     "demo:threshold": "node examples/threshold-demo.js",
     "demo:threshold-sign": "node examples/threshold-sign-demo.js",
     "demo:subliminal": "node examples/smoke-subliminal-demo.js",
+    "demo:simmons": "node examples/simmons-demo.js",
     "demo:tally": "node examples/tally-demo.js",
     "demo:visual": "node examples/visual-demo.js",
     "demo:image": "node examples/image-demo.js",

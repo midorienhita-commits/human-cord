@@ -25,7 +25,7 @@
 
 生成 AI の能力向上にともない、公的書類や証明書を外見的に複製するコストは急激に低下しつつある。EUF-CMA を満たす電子署名は「発行者の秘密なしに有効な署名を作れない」という偽造不可能性を既に達成しており、改ざんも検知できる。本白書が埋めようとするのは、その先に残る空白である——すなわち (a) その保証を**別添の署名ではなく文書本体・物理媒体に不可分に保持**すること、(b) **本体を秘匿したまま発行者だけが真贋を判定する**媒介検証(公開鍵による公開検証と併用可能)、(c) 公開鍵署名単体では提供できない固有機能(秘匿突き合わせ・閾値発行・物理担体)である。本白書が提案する human cord は、この空白を埋めるための統合的な暗号インフラの構想である。
 
-human cord は **10 本の柱**を、(i) マクロ層(卵の鎖)、(ii) ミクロ層(卵の中身)、(iii) 鍵派生層、(iv) 検証層、(v) 発火応答層、(vi) 失敗境界横断レイヤ、の **5 領域 + 1 横断**として統合する。各柱は単独では既存の研究・標準に強く接続しており、車輪の再発明を避けつつ、組み合わせ方の独自性として三つの主要な新規性(いずれも構想レベルの主張であり、現行 POC は最小実装段階にある)を提示する。第一に、文書レベルへ拡張された Subliminal Channel(柱 6。現 POC は発行者鍵由来の独立した authenticated フィールドによる最小実装で、真の subliminal channel は将来課題)。第二に、失敗境界における型と秘密の分離を徹底する自己観測抵抗(柱 10)。第三に、割符演算 `+/−` を**一つの演算子代数として統合し、検証失敗時に自動分岐する設計フレーム**(柱 3。BLS 集約署名等の機構は差し替え可能な境界として設計し、現 POC は依存ゼロの HMAC で割符性を最小実装)である。
+human cord は **10 本の柱**を、(i) マクロ層(卵の鎖)、(ii) ミクロ層(卵の中身)、(iii) 鍵派生層、(iv) 検証層、(v) 発火応答層、(vi) 失敗境界横断レイヤ、の **5 領域 + 1 横断**として統合する。各柱は単独では既存の研究・標準に強く接続しており、車輪の再発明を避けつつ、組み合わせ方の独自性として三つの主要な新規性(いずれも構想レベルの主張であり、現行 POC は最小実装段階にある)を提示する。第一に、文書レベルへ拡張された Subliminal Channel(柱 6。**真の subliminal channel=署名の乱数自由度〔nonce〕に埋める Simmons の原典構成を実装到達**〔6-ii・`simmons.js`〕。別フィールド版〔6-i〕は発行者だけが読める authenticated 付帯ペイロード。文書レベルの目玉文字埋込は将来課題)。第二に、失敗境界における型と秘密の分離を徹底する自己観測抵抗(柱 10)。第三に、割符演算 `+/−` を**一つの演算子代数として統合し、検証失敗時に自動分岐する設計フレーム**(柱 3。BLS 集約署名等の機構は差し替え可能な境界として設計し、現 POC は依存ゼロの HMAC で割符性を最小実装)である。
 
 中長期の標準化目標として、ISO/IEC 18033(暗号アルゴリズム)、ISO/IEC 27002 附属書(管理策)、および IETF RFC(IRTF CFRG 経由)を視野に入れる。本書執筆時点では Phase 0(設計の文書化)を完了し、Phase 1(Node.js による最小 POC)では 10 本の柱すべてに実装が到達している。
 
@@ -65,7 +65,7 @@ human cord は、技術設計に先立つ三つの原則を憲法として持つ
 
 **既知の限界(POC 段階).**
 
-- 現行 POC は依存ゼロの最小実装である。柱3 の割符は HMAC 通行手形(BLS 集約署名ではない)、柱4b の閾値発行は Shamir で分散保管し発行時に k 片を集めて秘密を**一度復元してから seal** する方式(各片が再構成せず部分署名する真の閾値署名 BLS/FROST とは安全性質が異なる)、柱6 は発行者鍵由来の独立 authenticated フィールド(厳密な subliminal channel ではない)。いずれも差し替え可能な機構境界として設計した将来課題である。
+- 現行 POC は依存ゼロである。柱3 の割符は HMAC 通行手形で、BLS 集約署名は差し替え可能な将来の機構境界。柱4b は二層: 4b-i(Shamir で分散保管し発行時に k 片を集め**一度復元してから seal**)に加え、**4b-ii で各片が再構成せず部分署名する真の閾値署名(素数体しきい値 Schnorr・`threshold.js`)を実装到達**(残限界=単一 nonce 逐次専用・信頼ディーラ・VSS 将来・非定数時間)。柱6 も二層: 6-i(別フィールドの authenticated 付帯ペイロード=厳密には subliminal channel ではない)に加え、**6-ii で署名 nonce に埋める真の Simmons 潜在チャネル(`simmons.js`)を実装到達**(残限界=broadband で受信者が署名鍵を共有・受動的看守のみ)。BLS・DKG・narrowband・目玉文字埋込は将来課題である。
 - 柱4 系の自作 GF(256)/Reed-Solomon(`shard.js`/`ecc.js`)および割符の自前実装は機能的正しさを検証済みだが、**定時間性・サイドチャネル耐性は未保証・外部監査未了**であり、本番採用時は定時間実装/監査済ライブラリへの置換を要する。なお文書機密を担う対称コア(AEAD・鍵派生・公開鍵署名)は標準ライブラリ(node 標準 crypto)を用いており、この留保の対象外である。
 - 柱7 の物理担体は合成光学劣化モデル(ぼけ・露出・ノイズ・遮蔽・透視・回転・放射歪み)を経た復元を実証済みだが、**実カメラ・実印刷・実スキャンを経た復元率は未測定**である(継続課題)。
 - 外部暗号査読・第三者評価・複数独立実装は未了(Phase 6)。**標準化は目標であって前提ではなく**、本書の主張は査読に耐えた範囲に限り段階的に進める。
@@ -273,7 +273,7 @@ human cord プロジェクトは、設計の文書化から標準化に至るま
 8. Marlinspike, M., Perrin, T. (2016). "The Double Ratchet Algorithm." Signal Technical Specification.
 9. Kerckhoffs, A. (1883). "La cryptographie militaire." *Journal des sciences militaires*, IX, 5–38.
 10. Camenisch, J., Lysyanskaya, A. (2002). "Dynamic Accumulators and Application to Efficient Revocation of Anonymous Credentials." In *CRYPTO 2002*, LNCS 2442, pp. 61–76.
-11. Sporny, M., Longley, D., Chadwick, D. (2022). "Verifiable Credentials Data Model v1.1." W3C Recommendation.
+11. Sporny, M., et al. (2025). "Verifiable Credentials Data Model v2.0." W3C Recommendation, 15 May 2025.
 12. Myers, E. W. (1986). "An O(ND) Difference Algorithm and Its Variations." *Algorithmica*, 1(1–4), 251–266.
 13. Merkle, R. C. (1988). "A Digital Signature Based on a Conventional Encryption Function." In *CRYPTO '87*, LNCS 293, pp. 369–378.
 14. Kocher, P., Jaffe, J., Jun, B. (1999). "Differential Power Analysis." In *CRYPTO '99*, LNCS 1666, pp. 388–397.
@@ -283,7 +283,7 @@ human cord プロジェクトは、設計の文書化から標準化に至るま
 18. NIST (2007). *SP 800-38D: Recommendation for Block Cipher Modes of Operation: Galois/Counter Mode (GCM) and GMAC*.
 19. NIST (2016). *SP 800-38G: Recommendation for Block Cipher Modes of Operation: Methods for Format-Preserving Encryption*.
 20. NIST (2008/2022). *SP 800-108 Rev.1: Recommendation for Key Derivation Using Pseudorandom Functions*.
-21. NIST (2018). *SP 800-160 Vol. 2: Developing Cyber-Resilient Systems — A Systems Security Engineering Approach*.
+21. NIST (2019; Rev. 1, 2021). *SP 800-160 Vol. 2: Developing Cyber-Resilient Systems — A Systems Security Engineering Approach*.
 22. NIST (2019). *FIPS 140-3: Security Requirements for Cryptographic Modules*.
 23. IETF (2010). *RFC 5869: HMAC-based Extract-and-Expand Key Derivation Function (HKDF)*.
 24. IETF (2008). *RFC 5280: Internet X.509 Public Key Infrastructure Certificate and CRL Profile*.
@@ -298,6 +298,7 @@ human cord プロジェクトは、設計の文書化から標準化に至るま
 33. IEEE (2018). *IEEE 802.15.7-2018: Short-Range Optical Wireless Communications*.
 34. Haas, H., Yin, L., Wang, Y., Chen, C. (2016). "What is LiFi?" *Journal of Lightwave Technology*, 34(6), 1533–1544.
 35. Mukhopadhyay, D., Chakraborty, R. S. (2014). *Hardware Security: Design, Threats, and Safeguards*. CRC Press.
+36. IETF (2017). *RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)*.
 
 > 注: 各エントリは公知の規格・論文に基づくが、版数・発行年は配布前に最終照合する。Phase 3 完了時に 35→40 件規模へ追補予定。
 
@@ -332,3 +333,4 @@ human cord プロジェクトは、設計の文書化から標準化に至るま
 - 2026-05-30 §3.5「標準化に向けた階層化:コアと拡張」を追加。10 柱を脅威→機構→性質で棚卸しし、(I) 対称発行コア / (II) 公開検証層 / (III) 固有価値 / (IV) 将来拡張・横断原則・運用規約 の四層に整理(実質的な仕様の核はおおむね 5 機能)。§6.2 標準化ターゲットを階層に沿った段階的プロセスとして明示(10 柱の概念地図=付録 A は保持)。
 - 2026-05-31 §4.1 に柱 6(潜在チャネル)の「運用上の位置づけ(重要な留保)」を追記。隠れチャネルは監査・標準化で警戒される性質を持つため、検証可能なコア(§3.5 層 I〜III)から隔離し将来拡張(層 IV)として位置づけ、無効化したまま運用可能であること(コアの安全性は不変)を明示。
 - 2026-06-07 公開準備レビュー(多エージェント検証)を反映し HIGH 項目を修正。著者名・連絡先を確定。実装と主張の乖離に留保を追加(§1・§4.1 柱6=独立 authenticated フィールド/§4.3 柱3=HMAC 最小実装・BLS は将来/§3.5 注=Shamir は秘密復元 seal で真の閾値署名でない)。§2.5「脅威モデル・攻撃者能力・信頼境界」と §2.6「既知の限界 / Non-goals」を新設。動機(§1・§2.1・§2.4)を EUF-CMA 署名を踏まえ detached vs intrinsic / 公開検証 vs 秘匿検証へ再定式化。§3.3 柱4 一行要約を §3.4 二層検証と整合(公開検証は秘密不要)。§6.2 標準化表を §3.5 四層軸に再構築(柱6・柱8 を IETF RFC 早期ターゲットから除外)。コード変更なし。
+- 2026-06-09 柱4b 真の閾値署名(§3.5 注・素数体しきい値 Schnorr・`threshold.js`)と柱6 真の Simmons 潜在チャネル(§4.1・署名 nonce 埋込・`simmons.js`)の実装到達を反映(§1・§2.6 を 4b-ii / 6-ii 実装済みへ更新)。英語版(en)を日本語版へ全面同期(HIGH 修正 §1/§2.1/§2.4/§2.5/§2.6/§3.3/§3.5/§4.1/§4.3/§6.2 を反映)。MED/LOW: NIST SP 800-160 Vol.2 を 2019(Rev.1 2021)へ、W3C VC を v2.0(2025)へ、RFC 8032(EdDSA)を文献に追加。PDF 再生成は別途。

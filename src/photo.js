@@ -334,6 +334,49 @@ function otsuThreshold(pixels) {
   return thr;
 }
 
+// ── 横フリッカー帯の除去(LED 照明 × ローリングシャッター)──────────────────
+// 室内 LED/蛍光灯は 100/120Hz で明滅し、スマホの行順次読み出し(ローリングシャッター)が
+// それを「画像の水平な明暗帯」として捉える。帯は画像行=センサ行に沿う(担体の傾きに依らず水平)で、
+// 各行の輝度を一様にスケールする(=黒も白も同率で暗む。情報は残るがグローバル Otsu が帯行を黒に潰す)。
+// 各画像行を、その行の白基準(中央列の高 percentile=フリッカで明滅する紙白)で正規化すれば帯が平らになる。
+//   行スカラ補正のみ(モジュールを横へ滲ませない)= 回転・透視と直交し、幾何補正の前段として安全。
+//   実カメラ実証(2026-06-16 印刷実写): この前段で帯潰れフレームが復号可能になった(白書 §5.17)。
+function deflickerRows(pixels, w, h, pct = 0.80, smoothY = 5) {
+  const x0 = (w * 0.2) | 0;
+  const x1 = Math.max(x0 + 1, (w * 0.8) | 0);
+  const white = new Float64Array(h);
+  const hist = new Uint32Array(256);
+  for (let y = 0; y < h; y++) {
+    hist.fill(0);
+    for (let x = x0; x < x1; x++) hist[pixels[y * w + x]]++;
+    const target = ((x1 - x0) * pct) | 0;
+    let acc = 0;
+    let p = 255;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= target) { p = v; break; } }
+    white[y] = p || 1;
+  }
+  // 行白基準を縦に少し平滑(行ノイズ抑制・フリッカ本体の低周波は残す)。
+  const sm = new Float64Array(h);
+  for (let y = 0; y < h; y++) {
+    let a = 0;
+    let n = 0;
+    for (let d = -smoothY; d <= smoothY; d++) { const yy = y + d; if (yy >= 0 && yy < h) { a += white[yy]; n++; } }
+    sm[y] = a / n;
+  }
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const g = 200 / Math.max(20, sm[y]); // 白を ~200 に揃える(暗い帯の行ほど強く持ち上げる)
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      // Math.round 必須: 切り捨て(|0)だと全画素が平均 ~0.5 暗くなり、RS 訂正の縁にいる
+      // 帯潰れフレーム(例 実写 133511)が境界の向こうへ落ちる(2026-06-16 実測で確認)。
+      const v = Math.round(pixels[row + x] * g);
+      out[row + x] = v > 255 ? 255 : v < 0 ? 0 : v;
+    }
+  }
+  return out;
+}
+
 // 黒(< thr)の連結成分(4近傍)を列挙。各成分の面積・bbox・重心を返す。
 function connectedComponents(pixels, w, h, thr) {
   const label = new Int32Array(w * h).fill(0);
@@ -798,6 +841,17 @@ export function scanPhoto(png, opts = {}) {
   // ② 自己クロック補正: tick 列のプラムラインで放射状レンズ歪みを推定し、歪み認識で再標本(§5.12)。
   const corrected = scanDistorted(pixels, w, h, thr, offs);
   if (corrected) return corrected;
+  // ③ deflicker フォールバック: 横フリッカー帯(LED×ローリングシャッター)を行正規化で平らにし、
+  //   ①②を再試行(§5.17 印刷実写で確証)。{deflicker:false} で無効化(比較用)。
+  if (opts.deflicker !== false) {
+    const dp = deflickerRows(pixels, w, h);
+    const dthr = otsuThreshold(dp);
+    const dPlain = tryPlain(dp, w, h, dthr, offs);
+    if (dPlain) return dPlain;
+    const dCorr = scanDistorted(dp, w, h, dthr, offs);
+    if (dCorr) return dCorr;
+    throw new PhotoError('decode failed (純ホモグラフィ + 自己クロック補正 + deflicker の三経路で復号不可)');
+  }
   throw new PhotoError('decode failed (純ホモグラフィ + 自己クロック補正の双方で復号不可)');
 }
 
@@ -819,61 +873,81 @@ export function scanPhotoMulti(pngs, opts = {}) {
   if (!Array.isArray(pngs) || pngs.length === 0) throw new PhotoError('scanPhotoMulti は PNG の非空配列を要する');
   const k = opts.subsamples == null ? 3 : Math.max(1, Math.floor(opts.subsamples));
   const offs = subOffsets(k);
+
   // 各フレームの幾何(finder + リング向き)を確定。読めない/リング不検出のフレームは融合から外す。
-  const frames = [];
-  for (const png of pngs) {
-    let w, h, pixels, thr, geo;
-    try {
-      ({ w, h, pixels } = decodePng(png));
-      thr = otsuThreshold(pixels);
-      geo = frameGeometry(pixels, w, h, thr);
-    } catch { continue; } // finder 不検出など → このフレームは捨てる
-    if (geo.ringPos < 0) continue; // 向きを幾何的に確定できない → 融合に使わない(保険なし)
-    // 放射状レンズ歪みを winding 非依存に推定(歪み≒0/tick 不足は k1=0=純ホモグラフィ=従来挙動)。
-    const dist = frameDistortion(pixels, w, h, thr, geo.sorted);
-    frames.push({ pixels, w, h, thr, sorted: geo.sorted, ringPos: geo.ringPos, dist });
-  }
-  if (frames.length === 0) throw new PhotoError('融合に使えるフレームが無い(全フレームで finder/リング不検出)');
-
-  // N 中心 = 各フレーム nEst の中央値。歪みがあれば自己クロック由来(finder 面積由来は周辺拡大で肥大)。
-  const nEsts = frames.map((f) => {
-    if (f.dist.k1 && f.dist.mp >= 1) {
-      const ne = undistortedNEst(rotOrder(f.sorted, f.ringPos), f.dist.qcx, f.dist.qcy, f.dist.R, f.dist.k1, f.dist.mp);
-      if (ne >= 1) return ne;
+  // xform=画素変換(deflicker など)。null は従来どおり生画素。
+  const buildFrames = (xform) => {
+    const frames = [];
+    for (const png of pngs) {
+      let w, h, pixels, thr, geo;
+      try {
+        ({ w, h, pixels } = decodePng(png));
+        if (xform) pixels = xform(pixels, w, h);
+        thr = otsuThreshold(pixels);
+        geo = frameGeometry(pixels, w, h, thr);
+      } catch { continue; } // finder 不検出など → このフレームは捨てる
+      if (geo.ringPos < 0) continue; // 向きを幾何的に確定できない → 融合に使わない(保険なし)
+      const dist = frameDistortion(pixels, w, h, thr, geo.sorted); // 歪み≒0/tick 不足は k1=0=従来挙動
+      frames.push({ pixels, w, h, thr, sorted: geo.sorted, ringPos: geo.ringPos, dist });
     }
-    return cornerHomography(rotOrder(f.sorted, f.ringPos)).nEst;
-  }).sort((a, b) => a - b);
-  const nCenter = nEsts[nEsts.length >> 1];
+    return frames;
+  };
 
-  // winding(順/鏡像)はフレーム一括(同じ撮影系は全フレーム同じ巻き)。各 winding × N 候補で融合復号。
-  for (const winding of [rotOrder, revOrder]) {
-    const geos = frames.map((f) => {
-      const order = winding(f.sorted, f.ringPos);
-      // 歪みがあれば各フレームを scanDistorted と同じ式で整流(lensDistort∘H)、無ければ純ホモグラフィ(=従来)。
-      const map = f.dist.k1 ? distortedMapping(order, f.dist.qcx, f.dist.qcy, f.dist.R, f.dist.k1) : cornerHomography(order).H;
-      return { pixels: f.pixels, w: f.w, h: f.h, thr: f.thr, map };
-    });
-    for (let d = 0; d <= 20; d++) {
-      for (const dn of d === 0 ? [0] : [d, -d]) {
-        const N = nCenter + dn;
-        if (N < 1) continue;
-        const denom = N + 11;
-        const ustep = 1 / denom;
-        const bits = new Uint8Array(N * N);
-        for (let my = 0; my < N; my++) {
-          for (let mx = 0; mx < N; mx++) {
-            const ucx = (6 + mx) / denom;
-            const ucy = (6 + my) / denom;
-            let sum = 0; // Σ 暗さ率(フレーム横断 soft 融合)
-            for (const g of geos) sum += moduleDarkFrac(g.pixels, g.w, g.h, g.map, ucx, ucy, ustep, g.thr, offs);
-            bits[my * N + mx] = sum * 2 > geos.length ? 1 : 0; // フレーム平均が >0.5 → 黒
+  // フレーム群を soft 融合して復号(成功=cord / 失敗=null)。
+  const fuse = (frames) => {
+    if (frames.length === 0) return null;
+    // N 中心 = 各フレーム nEst の中央値。歪みがあれば自己クロック由来(finder 面積由来は周辺拡大で肥大)。
+    const nEsts = frames.map((f) => {
+      if (f.dist.k1 && f.dist.mp >= 1) {
+        const ne = undistortedNEst(rotOrder(f.sorted, f.ringPos), f.dist.qcx, f.dist.qcy, f.dist.R, f.dist.k1, f.dist.mp);
+        if (ne >= 1) return ne;
+      }
+      return cornerHomography(rotOrder(f.sorted, f.ringPos)).nEst;
+    }).sort((a, b) => a - b);
+    const nCenter = nEsts[nEsts.length >> 1];
+    // winding(順/鏡像)はフレーム一括(同じ撮影系は全フレーム同じ巻き)。各 winding × N 候補で融合復号。
+    for (const winding of [rotOrder, revOrder]) {
+      const geos = frames.map((f) => {
+        const order = winding(f.sorted, f.ringPos);
+        const map = f.dist.k1 ? distortedMapping(order, f.dist.qcx, f.dist.qcy, f.dist.R, f.dist.k1) : cornerHomography(order).H;
+        return { pixels: f.pixels, w: f.w, h: f.h, thr: f.thr, map };
+      });
+      for (let d = 0; d <= 20; d++) {
+        for (const dn of d === 0 ? [0] : [d, -d]) {
+          const N = nCenter + dn;
+          if (N < 1) continue;
+          const denom = N + 11;
+          const ustep = 1 / denom;
+          const bits = new Uint8Array(N * N);
+          for (let my = 0; my < N; my++) {
+            for (let mx = 0; mx < N; mx++) {
+              const ucx = (6 + mx) / denom;
+              const ucy = (6 + my) / denom;
+              let sum = 0; // Σ 暗さ率(フレーム横断 soft 融合)
+              for (const g of geos) sum += moduleDarkFrac(g.pixels, g.w, g.h, g.map, ucx, ucy, ustep, g.thr, offs);
+              bits[my * N + mx] = sum * 2 > geos.length ? 1 : 0; // フレーム平均が >0.5 → 黒
+            }
           }
+          try { return matrixToCord(bits); } catch { /* 次の N */ }
         }
-        try { return matrixToCord(bits); } catch { /* 次の N */ }
       }
     }
+    return null;
+  };
+
+  // ① 生画素で融合(従来挙動=非破壊)。
+  const rawFrames = buildFrames(null);
+  if (rawFrames.length === 0) throw new PhotoError('融合に使えるフレームが無い(全フレームで finder/リング不検出)');
+  const raw = fuse(rawFrames);
+  if (raw) return raw;
+  // ② deflicker フォールバック: 横フリッカー帯を行正規化で平らにしてから融合(§5.17)。
+  //   帯はフレームごとに位置が違う(撮影由来)ので、平らにした各フレームの soft 融合が効く。
+  if (opts.deflicker !== false) {
+    const dfFrames = buildFrames(deflickerRows);
+    const df = fuse(dfFrames);
+    if (df) return df;
   }
-  throw new PhotoError(`fusion decode failed (${frames.length} frame(s), N≈${nCenter})`);
+  throw new PhotoError(`fusion decode failed (${rawFrames.length} frame(s); raw + deflicker の双方で不通)`);
 }
 
 export { ImageCarrierError };

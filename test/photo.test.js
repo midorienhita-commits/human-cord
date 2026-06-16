@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { seal, open, CordTamper } from '../src/cord.js';
 import { renderScannable, simulatePhoto, scanPhoto, scanPhotoMulti, PhotoError } from '../src/photo.js';
-import { encodePng } from '../src/image.js';
+import { encodePng, decodePng } from '../src/image.js';
 
 const SECRET = 'issuer-private-half-xyz';
 const AXES = { epoch: 1_000_000, weekday: 3, hour: 10, parity: 0 };
@@ -224,4 +224,48 @@ test('柱7 photo: 融合がレンズ歪みに対応 — 各フレームを歪み
   const back = scanPhotoMulti(frames);
   assert.equal(back.tip, cord.tip);
   assert.equal(open(back, SECRET), TEXT);
+});
+
+// ⑨ 横フリッカー帯の除去(§5.17・LED 照明 × ローリングシャッター)──────────────
+// 室内 LED は 100/120Hz で明滅し、スマホの行順次読み出しが画像に水平な明暗帯を作る。
+// 帯は各画像行を一様にスケールする(黒も白も同率で暗む=情報は残るがグローバル Otsu が帯行を潰す)。
+// scanPhoto は plain/distort 失敗後に deflicker(行ごと白正規化)を試す。実写 2026-06-16 で
+// 印刷物の帯潰れフレームがこれで復号可能になった(コンビニ 4 色印刷からの実復号)。
+
+// 写真 PNG の各画像行に乗算フリッカー(周期的な暗帯)を掛ける。黒白を同率で暗くする=情報保存。
+//   period は実測フリッカ(§5.17 で ~67–85px)に倣い長め。短周期(< deflicker の縦平滑窓)は
+//   正規化が打ち消されるので非現実的(=テストにしない)。
+function applyFlicker(png, { period = 50, depth = 0.75 } = {}) {
+  const { w, h, pixels } = decodePng(png);
+  const out = Buffer.alloc(w * h);
+  for (let y = 0; y < h; y++) {
+    // 0..1 の周期波。谷で depth まで暗く(白も黒も同じ係数=純乗算=deflicker で割れば戻る)。
+    const phase = 0.5 - 0.5 * Math.cos((2 * Math.PI * y) / period);
+    const f = 1 - depth * phase; // 1(明)〜 1-depth(暗帯)
+    const row = y * w;
+    for (let x = 0; x < w; x++) out[row + x] = Math.round(pixels[row + x] * f);
+  }
+  return encodePng(out, w, h);
+}
+
+test('柱7 photo: 横フリッカー帯 — plain は潰れるが deflicker フォールバックが復元する', () => {
+  const cord = freshCord('CERT-9'); // 短文=小 N=高速(失敗時の N ブルートフォースが重いため)
+  const { png } = renderScannable(cord);
+  const shot = simulatePhoto(png, { scale: 0.9, seed: 3 }); // 素直な写真
+  const flickered = applyFlicker(shot, { period: 50, depth: 0.75 }); // 強い乗算帯(実測フリッカ相当)
+  // deflicker を切ると、グローバル Otsu が暗帯の白モジュールを黒に潰し RS 能力を超える=失敗。
+  assert.throws(() => scanPhoto(flickered, { deflicker: false }), PhotoError);
+  // 既定(deflicker フォールバック有効)は行正規化で帯を平らにして復元。
+  const back = scanPhoto(flickered);
+  assert.equal(back.tip, cord.tip);
+  assert.equal(open(back, SECRET), 'CERT-9');
+});
+
+test('柱7 photo: deflicker は通常の clean な写真の復号を壊さない(フォールバックは最後だけ)', () => {
+  // plain で読める写真は deflicker に到達しない(既存挙動不変の保証)。
+  const cord = freshCord('CERT-9');
+  const { png } = renderScannable(cord);
+  const clean = simulatePhoto(png, { rotateDeg: 12, scale: 0.9, seed: 4 });
+  assert.equal(open(scanPhoto(clean), SECRET), 'CERT-9');            // deflicker 有効でも
+  assert.equal(open(scanPhoto(clean, { deflicker: false }), SECRET), 'CERT-9'); // 無効でも同じ
 });

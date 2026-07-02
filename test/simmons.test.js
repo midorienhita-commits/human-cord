@@ -41,14 +41,14 @@ test('正準ベクトル: 固定入力で (r,s) が再現し、公開検証が�
   const subKey = Buffer.from('a1'.repeat(32), 'hex');
   const y = modpow(group.g, x, group.p);
 
-  const { message, sig } = signWithSubliminal(group, x, 'CERT#42 GreenOffice', 'GO', subKey, {
+  const { message, sig } = signWithSubliminal(group, x, 'CERT#42 SampleIssuer', 'HQ', subKey, {
     sigSalt: '4815a08ad3885bbbc4aa50c5ef018996',
   });
-  assert.equal(message, 'CERT#42 GreenOffice|salt=4815a08ad3885bbbc4aa50c5ef018996');
-  assert.equal(sig.r, 91396327405555019679118065937636902903n);
-  assert.equal(sig.s, 120070879798093694876105331048653962939n);
+  assert.equal(message, 'CERT#42 SampleIssuer|salt=4815a08ad3885bbbc4aa50c5ef018996');
+  assert.equal(sig.r, 130959833529002651718039866641893420184n);
+  assert.equal(sig.s, 3728908464917364478678085146012149754n);
   assert.equal(verify(group, y, message, sig), true);
-  assert.equal(recoverSubliminal(group, x, message, sig, subKey), 'GO');
+  assert.equal(recoverSubliminal(group, x, message, sig, subKey), 'HQ');
 });
 
 // ───────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 // webcrypto-compat.test.js
 // human cord の移植性検証(Phase 4 / BiosGuide 統合設計 §8 の最初の技術タスク)。
 //
-// human cord POC は node:crypto を使うが、Supabase Edge Function(Deno)等では
+// human cord POC は node:crypto を使うが、サーバレス実行環境(Deno / ブラウザ)等では
 // W3C Web Crypto API(crypto.subtle)を使う。両者が「同じ入力に同じ出力」を返すなら、
 // seal/open をブラウザ非保持の信頼境界(サーバ)へそのまま移植できる。
 //

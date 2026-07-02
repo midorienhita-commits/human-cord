@@ -17,7 +17,7 @@ console.log('防御: 鮮度(epoch は codebook 経由で ciphertext に束縛=fr
 console.log('    + 連続性(各フレームに prev=前フレーム tip を封入=卵の鎖の時間方向)');
 console.log('    + テロメア(seq 0..' + (LEN - 1) + ' を一方向に消費=巻き戻し/枯渇)\n');
 
-const frames = emitLive('在席証明 GreenOffice BiosGuide 室', ISSUER, 'live',
+const frames = emitLive('在席証明 BiosGuide 室', ISSUER, 'live',
   { startEpoch: T0, frameMs: FRAME_MS, length: LEN });
 console.log('--- ① 発行(emitLive)---');
 console.log('フレーム鎖      : ' + frames.length + ' 枚 / 間隔 ' + FRAME_MS + 'ms / seq0 は prev=null(genesis)');

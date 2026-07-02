@@ -27,7 +27,7 @@ const subKey = Buffer.from('5f09b90642412c83192474c4b45d7faebc92522f55331a617c8c
 line(`  公開鍵 y を配布。potency: 1 署名あたり covert 容量 = ${subliminalCapacityBytes(group.q)} byte`);
 line('');
 
-const publicText = 'CERT-2026-0042 データ消去 4台 / GreenOffice 発行';
+const publicText = 'CERT-2026-0042 データ消去 4台 / サンプル社発行';
 const covert = 'AUDIT:本社のみ';
 
 // ① 潜在署名: 表の本文に署名しつつ、裏メッセージを nonce に埋める

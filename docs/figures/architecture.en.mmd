@@ -6,7 +6,7 @@ flowchart TB
     macro --> deliver([Delivery])
     deliver --> verify{"Verification<br/>Pillars 3,4"}
     verify -->|match| merged[Merged display]
-    verify -->|no| smoke["Active response Pillar 8<br/>smoke + public log"]
+    verify -->|no| smoke["Active-response layer Pillar 8<br/>smoke + public log"]
     boundary["Pillar 10: failure boundary<br/>(cross-cutting, always active)"]
     boundary -.- micro
     boundary -.- macro

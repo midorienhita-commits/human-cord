@@ -6,7 +6,7 @@ flowchart TB
     macro --> deliver([配信])
     deliver --> verify{"検証層<br/>柱3,4"}
     verify -->|合致| merged[統合表示]
-    verify -->|否| smoke["発火層 柱8<br/>煙 + public log"]
+    verify -->|否| smoke["発火応答層 柱8<br/>煙 + public log"]
     boundary["柱10 失敗境界<br/>(全工程を横断して常時作動)"]
     boundary -.- micro
     boundary -.- macro

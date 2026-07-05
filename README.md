@@ -16,8 +16,36 @@
 - 開いた瞬間に実例(実際に発行した消去証明書)を自動検証 → **✓ 緑(正規・改ざんなし)**
 - **「⚠ 改ざんしてみる」**を押すと、数値が 1 つ変わるだけで **✗ 赤(署名不一致)**
 
-これが human cord の一番分かりやすい入口です。下記の 10 柱・二層検証は、このデモの「裏側の理屈」。
+これが human cord の一番分かりやすい入口です。後述の 5 機能コア・10 柱は、このデモの「裏側の理屈」。
 **まず動くものを見て、必要になったら設計を読む** —— の順で十分です。
+
+---
+
+## ▶ 実測:紙に印刷し、スマホで撮影して、検証まで戻る
+
+主張ではなく測定で語る。暗号担体(HC2 = Reed-Solomon 誤り訂正付き視覚フレーム)を実環境で復元できることを実測済み:
+
+- **実印刷**: コンビニのカラーレーザー印刷 → スマホ撮影で、**4 密度ティア(91² / 112² / 136² / 187² モジュール)すべてが単フレーム復号**に到達。
+- **画面撮影**: 単フレーム復元率 ~48%、**バースト撮影のフレーム融合で全 3 担体を復元**。finder 局所化は 22/22。
+- 復号側は依存ゼロ(`node:zlib` のみ)。撮影→復号の測定キットは `tools/real-camera/`、測定記録は `docs/phase2-pillar7-visual-channel.md` §5.15–§5.17。
+
+条件と限界も正直に記録している(画面モアレは capture 律速・高密度 187² の融合はモアレ位相で悪化=単フレーム多数撮りが正解、など)。
+
+---
+
+## ▶ 仕様の核は 5 機能
+
+10 柱は着想の全体地図(後述)だが、脅威→機構→性質で棚卸しすると(`docs/pillar-threat-map.md`)、仕様の核は実質 5 つに絞れる:
+
+| # | 機能 | 何が新しいか / 何に効くか | 実装 |
+|---|---|---|---|
+| 1 | **対称発行コア** | KDF(多軸)+ AEAD ハッシュ鎖 + ratchet + 最小開示。本体を封じたまま発行者だけが真贋判定(封印本体) | `src/kdf.js` `egg.js` `ratchet.js` `cord.js` |
+| 2 | **公開検証層(Ed25519)** | 公開可能な事実は誰でも・公開鍵だけで・オフライン検証(上のキラーデモ) | `src/pubkey.js` |
+| 3 | **秘匿突き合わせ(割符 `+/-`)** | 本体を開示せず同一案件の統合 / 差分を判定 | `src/tally.js` `issue.js` |
+| 4 | **閾値発行** | 単一拠点では発行できない。真の閾値署名(秘密を一度も再構成しないしきい値 Schnorr・素数体・依存ゼロ)まで実装到達 | `src/threshold.js` `shard.js` |
+| 5 | **印刷可能担体 + 誤り訂正** | Reed-Solomon over GF(256)。紙・画面・音に載せて実測で復元(上の実測) | `src/ecc.js` `image.js` `photo.js` `audio.js` |
+
+この 5 つを**一度の発行で同じ一枚に束ねる**のが採用面 `src/issue.js` の `issue()`。
 
 ---
 
@@ -27,7 +55,7 @@
 
 ---
 
-## Phase 1 POC のスコープ
+## 10 柱の概念地図(Phase 1 POC のスコープ)
 
 「文字 1 個が辿る道」を最小実装し、**発行 → 卵の鎖 → 改ざん検知**の一周を動かす。
 
@@ -42,9 +70,12 @@
 | **柱4深化 割符の情報理論的分割** | Shamir 秘密分散(GF256)。閾値未満は計算無限でも復元不能 | `src/shard.js` |
 | **柱4/7 人間の曖昧さを鍵源に** | Fuzzy Extractor。手相・虹彩から誤り訂正で安定鍵を再生(生体は保存しない) | `src/fuzzy.js` |
 | **柱4 公開鍵検証層(Ed25519)** | 公開可能な事実に発行者署名 → 公開鍵だけでオフライン第三者検証(秘密不要)。対称コアの相補 | `src/pubkey.js` |
-| **柱6 潜在チャネル** | 発行者だけが読める裏メッセージ(Simmons subliminal channel) | `src/subliminal.js` |
+| **柱4b 真の閾値署名** | 秘密を署名のどの瞬間にも再構成しないしきい値 Schnorr(素数体 DLOG 群・依存ゼロ・公開検証可)。k−1 拠点の連合でも発行不能 | `src/threshold.js` |
+| **柱6-i 付帯ペイロード** | 発行者だけが読める裏メッセージ(authenticated 付帯フィールド。厳密には subliminal channel ではない=正直な枠づけ) | `src/subliminal.js` |
+| **柱6-ii 真の Simmons 潜在チャネル** | DSA 署名の nonce に covert を埋込(付帯フィールド無し・(r,s) レベルで看守に検出不能)。監査で警戒される性質ゆえ採用面から隔離・既定 OFF | `src/simmons.js` |
 | **柱8 能動的発火応答** | 改ざん検知を append-only ハッシュチェーンログ(煙)に永久記録 | `src/smoke.js` |
-| **柱7 物理層出力(視覚チャネル)** | 媒体非依存フレーム codec(HC1 検知 / HC2 = Reed-Solomon 誤り訂正)+ リプレイ防止(nonce 一回性 + 鮮度窓 + 煙)。実ピクセル/QR/AI 抽出は Phase 2+ アダプタ | `src/visual.js` |
+| **柱7 物理層出力(視覚チャネル)** | 媒体非依存フレーム codec(HC1 検知 / HC2 = Reed-Solomon 誤り訂正)+ リプレイ防止(nonce 一回性 + 鮮度窓 + 煙) | `src/visual.js` |
+| **柱7 実ピクセル / カメラ撮影復号** | 実 PNG 描画・finder 検出・ホモグラフィ補正・レンズ歪み補正・フレーム融合・deflicker。**実印刷・実カメラで復元を実測済(上記「実測」)** | `src/image.js` `photo.js` `budget.js` |
 | **柱7 物理層: 誤り訂正(ECC)** | Reed-Solomon over GF(256)(QR と同じ field, 依存ゼロ)。担体ノイズ・バースト・部分欠損を訂正。fuzz テスト済 | `src/ecc.js` |
 | **柱7 物理層出力(音響担体)** | FSK 音響 codec(+ WAV、RS 訂正フレーム)+ リプレイ防止(視覚と共通)。「見えない著作権コード」= 鍵付き署名を音に乗せる。不可聴化/実マイク同期は Phase 2+ | `src/audio.js` |
 | **柱10 失敗境界の自己観測抵抗** | 改ざん検知で露出するのは「型(seq)」のみ、核は不漏 | `src/cord.js` |
@@ -53,10 +84,12 @@
 **視覚(`src/visual.js`)と音響(`src/audio.js`)の 2 担体**に枝分かれする。リプレイ防止
 (FreshnessGuard / 忠実復元)は `src/freshness.js` に共通化し両担体で共有。
 誤り訂正は `src/ecc.js`(Reed-Solomon / 依存ゼロ)で実装し、視覚(HC2)・音響(RS フレーム)の両担体に統合済。
-残る物理アダプタ(実ピクセル/QR/カメラ/AI 抽出、音の不可聴化=心理音響マスキング・実マイク同期)は依存を増やすため別腹で継続。
-設計は `docs/phase2-pillar7-visual-channel.md` / `docs/phase2-pillar7-audio-channel.md` を参照。
+視覚は実ピクセル(`src/image.js`)→ カメラ撮影復号(`src/photo.js`: finder 検出・ホモグラフィ・
+レンズ歪み補正・フレーム融合・deflicker)→ 可読性バジェット(`src/budget.js`)まで実装し、
+**実印刷・実カメラで復元を実測済**(冒頭「実測」参照)。残り(音の不可聴化=心理音響マスキング・実マイク同期)は継続。
+設計・測定記録は `docs/phase2-pillar7-visual-channel.md` / `docs/phase2-pillar7-audio-channel.md` を参照。
 
-### 柱6 潜在チャネル / 柱8 発火応答
+### 柱6-i 付帯ペイロード / 柱8 発火応答
 
 ```js
 import { embedSubliminal, readSubliminal } from './src/subliminal.js';
@@ -73,7 +106,9 @@ guardedOpen(tamperedCord, secret, log); // 改ざんなら throw + log.raise('ta
 log.verify();                           // ログ自体の整合性(煙は消せない)
 ```
 
-- 柱6 は夢4(目玉の見えないノイズ)/ 白書 §4.1。表チャネル(open)に影響しない独立の第二チャネル。
+- 柱6-i は夢4(目玉の見えないノイズ)/ 白書 §4.1。表チャネル(open)に影響しない独立の第二チャネル
+  (authenticated 付帯フィールド方式=厳密には subliminal channel ではない)。**真の Simmons 潜在チャネルは
+  柱6-ii(`src/simmons.js`・署名 nonce 埋込・`npm run demo:simmons`)**として別実装(採用面から隔離・既定 OFF)。
 - 柱8 は夢6(悪さをすると煙が立つ)。「火のないところに煙は立たぬ」の逆実装。罰しないが、煙は誰の目にも残る(第二条)。
 
 ### 柱1 干支型多軸鍵(時計は公開・秘密だけが片割れ)
@@ -114,19 +149,27 @@ combine(a, other, secret); // → { op:'-', matched:false, diff:{ reason:'別案
 ## 使い方
 
 ```bash
-npm run demo:e2e        # ★統合デモ: 証明書ライフサイクルで 10 柱+2担体が噛み合う通し
-npm run demo            # ひと回しデモ(発行→検証→片割れ拒否→改ざん検知)
-npm run demo:tally      # 柱3 割符演算(+ 統合 / − 差分発火)
-npm run demo:shard      # 柱4 Shamir 秘密分散(閾値未満は復元不能)
-npm run demo:threshold  # 柱4 閾値発行: 単一拠点では偽造不可=計算非依存の「変えられない根」
-npm run demo:fuzzy      # 柱4/7 Fuzzy Extractor(手相・虹彩から安定鍵)
-npm run demo:subliminal # 柱6 潜在チャネル + 柱8 煙(改ざんで煙が立つ)
-npm run demo:visual     # 柱7 視覚チャネル(担体 codec + リプレイ防止 + 煙)
-npm run demo:audio      # 柱7 音響担体(FSK→WAV、見えない著作権コード)
-npm run demo:ecc        # 柱7 物理層の頑健化(Reed-Solomon で担体ノイズを訂正)
-npm run demo:issue      # 採用面: 発行 / 発行者媒介検証(verify は構造化結果を返す)
-npm run demo:pubkey     # 柱4 公開鍵検証層(Ed25519、公開鍵だけでオフライン検証)
-npm test                # 振る舞いテスト 121 本(node --test, 依存ゼロ)
+npm run demo:e2e            # ★統合デモ: 証明書ライフサイクルで 10 柱+2担体が噛み合う通し
+npm run demo                # ひと回しデモ(発行→検証→片割れ拒否→改ざん検知)
+npm run demo:issue          # 採用面: 発行 / 発行者媒介検証(verify は構造化結果を返す)
+npm run demo:pubkey         # コア2 公開鍵検証層(Ed25519、公開鍵だけでオフライン検証)
+npm run demo:tally          # コア3 割符演算(+ 統合 / − 差分発火)
+npm run demo:reconstruct    # コア3 相同組換え: 複数担体から案件の本質事実を再建
+npm run demo:threshold      # コア4 閾値発行(Shamir): 単一拠点では発行不可
+npm run demo:threshold-sign # コア4 真の閾値署名(しきい値 Schnorr・秘密を再構成しない)
+npm run demo:shard          # コア4 Shamir 秘密分散(閾値未満は復元不能)
+npm run demo:ecc            # コア5 誤り訂正(Reed-Solomon で担体ノイズを訂正)
+npm run demo:visual         # コア5 視覚チャネル(担体 codec + リプレイ防止 + 煙)
+npm run demo:image          # コア5 実ピクセル担体(実PNG 描画→抽出、部分遮蔽に耐性)
+npm run demo:photo          # コア5 カメラ撮影復号(finder・ホモグラフィ・歪み補正・融合)
+npm run demo:budget         # コア5 可読性バジェット(px/module 計画)
+npm run demo:audio          # コア5 音響担体(FSK→WAV、見えない著作権コード)
+npm run demo:fuzzy          # 柱4c Fuzzy Extractor(手相・虹彩から安定鍵)
+npm run demo:subliminal     # 柱6-i 付帯ペイロード + 柱8 煙(改ざんで煙が立つ)
+npm run demo:simmons        # 柱6-ii 真の Simmons 潜在チャネル(署名 nonce 埋込)
+npm run demo:live           # 生きた担体(テロメア型フレーム鎖・リプレイ検知)
+npm run demo:challenge      # 対話チャレンジ応答 liveness
+npm test                    # 振る舞いテスト 218 本(node --test, 依存ゼロ)
 # examples/verify.html をブラウザで開く → 公開検証ページ(サーバ不要・公開鍵だけで真贋確認)
 ```
 
@@ -196,15 +239,22 @@ rep(otherPersonsPalm, helper);      // 別の key(他人は開けない)
 
 ## ライセンス
 
-- コード: Apache License 2.0
-- (構想白書等の文書: CC BY-SA 4.0)
+- コード: Apache License 2.0([`LICENSE`](LICENSE))
+- 文書(構想白書 `docs/` 等): CC BY-SA 4.0
+
+## セキュリティ
+
+本実装は POC であり第三者監査を受けていない。既知の限界(自作 GF(256)/RS・BigInt modexp の
+非定数時間性など)と報告窓口は [`SECURITY.md`](SECURITY.md) を参照。
 
 ## ステータス
 
-Phase 0(設計文書化)完了 → **Phase 1(最小 POC)着手・本リポジトリ。10 柱すべてに実装が到達** → Phase 2(物理アダプタ)…
+Phase 0(設計文書化)完了 → **Phase 1(最小 POC)・本リポジトリ。10 柱すべてに実装が到達** →
+Phase 2(物理層)は視覚担体が実印刷・実カメラの実測まで到達(冒頭「実測」)。
 
-実装済み柱: 1, 2, 3, 4, 5, 6, 8, 9, 10 に加え、柱7 はプロトコル層を Phase 2 最小縦切りで実装
-(視覚 + 音響の 2 担体)。柱7 の物理アダプタ(実ピクセル/QR/ECC/AI 抽出・音の不可聴化)は継続課題。
+実装済み柱: 1, 2, 3, 4(+4b 真の閾値署名), 5, 6(6-i / 6-ii), 8, 9, 10 に加え、柱7 は
+プロトコル層(視覚 + 音響の 2 担体)+ 実ピクセル / カメラ撮影復号まで実装・実測済。
+継続課題: 音の不可聴化(心理音響マスキング)・実マイク同期・実機条件の体系スイープ。
 
 採用面(application surface): `src/issue.js` の `issue()`(発行 → HC2 担体)/ `verify()`(発行者媒介検証 →
 `{ok, verdict, payload, …}` の構造化結果)/ `relate()`(柱3 案件内関連付け: 同一案件を + 統合 / 別案件を − 差分)/

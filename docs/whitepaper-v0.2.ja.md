@@ -274,7 +274,7 @@ human cord プロジェクトは、設計の文書化から標準化に至るま
 5. Dodis, Y., Reyzin, L., Smith, A. (2004). "Fuzzy Extractors: How to Generate Strong Keys from Biometrics and Other Noisy Data." In *EUROCRYPT 2004*, LNCS 3027, pp. 523–540.
 6. Bertoni, G., Daemen, J., Peeters, M., Van Assche, G. (2007). "Sponge Functions." *ECRYPT Hash Workshop 2007*.
 7. Bernstein, D. J. (2008). "ChaCha, a Variant of Salsa20." *Workshop Record of SASC 2008*.
-8. Marlinspike, M., Perrin, T. (2016). "The Double Ratchet Algorithm." Signal Technical Specification.
+8. Perrin, T. (ed.), Marlinspike, M. (2016). "The Double Ratchet Algorithm." Signal Technical Specification, Revision 1, 20 Nov 2016.
 9. Kerckhoffs, A. (1883). "La cryptographie militaire." *Journal des sciences militaires*, IX, 5–38.
 10. Camenisch, J., Lysyanskaya, A. (2002). "Dynamic Accumulators and Application to Efficient Revocation of Anonymous Credentials." In *CRYPTO 2002*, LNCS 2442, pp. 61–76.
 11. Sporny, M., et al. (2025). "Verifiable Credentials Data Model v2.0." W3C Recommendation, 15 May 2025.
@@ -283,17 +283,17 @@ human cord プロジェクトは、設計の文書化から標準化に至るま
 14. Kocher, P., Jaffe, J., Jun, B. (1999). "Differential Power Analysis." In *CRYPTO '99*, LNCS 1666, pp. 388–397.
 15. Boneh, D., DeMillo, R. A., Lipton, R. J. (2001). "On the Importance of Eliminating Errors in Cryptographic Computations." *Journal of Cryptology*, 14(2), 101–119.
 16. Genkin, D., Shamir, A., Tromer, E. (2014). "RSA Key Extraction via Low-Bandwidth Acoustic Cryptanalysis." In *CRYPTO 2014*, LNCS 8616, pp. 444–461.
-17. Pfitzmann, B., Waidner, M. (1992). "Attacks on Protocols for Server-Aided RSA Computation." In *EUROCRYPT '92*, LNCS 658.
+17. Pfitzmann, B., Waidner, M. (1992). "Attacks on Protocols for Server-Aided RSA Computation." In *EUROCRYPT '92*, LNCS 658, pp. 153–162.
 18. NIST (2007). *SP 800-38D: Recommendation for Block Cipher Modes of Operation: Galois/Counter Mode (GCM) and GMAC*.
 19. NIST (2016). *SP 800-38G: Recommendation for Block Cipher Modes of Operation: Methods for Format-Preserving Encryption*.
-20. NIST (2008/2022). *SP 800-108 Rev.1: Recommendation for Key Derivation Using Pseudorandom Functions*.
+20. NIST (2022; upd. 1, 2024). *SP 800-108 Rev. 1 (Update 1): Recommendation for Key Derivation Using Pseudorandom Functions*.
 21. NIST (2019; Rev. 1, 2021). *SP 800-160 Vol. 2: Developing Cyber-Resilient Systems — A Systems Security Engineering Approach*.
 22. NIST (2019). *FIPS 140-3: Security Requirements for Cryptographic Modules*.
 23. IETF (2010). *RFC 5869: HMAC-based Extract-and-Expand Key Derivation Function (HKDF)*.
 24. IETF (2008). *RFC 5280: Internet X.509 Public Key Infrastructure Certificate and CRL Profile*.
 25. IETF (2018). *RFC 8446: The Transport Layer Security (TLS) Protocol Version 1.3*.
 26. IETF (2018). *RFC 8439: ChaCha20 and Poly1305 for IETF Protocols*.
-27. IETF (2013). *RFC 6962: Certificate Transparency*.
+27. IETF (2013). *RFC 6962: Certificate Transparency*. (Obsoleted by RFC 9162 (2021); deployed CT remains RFC 6962-based.)
 28. ISO/IEC (2021). *ISO/IEC 18033-1:2021: Information security — Encryption algorithms — Part 1: General*.
 29. ISO/IEC (2012). *ISO/IEC 29192-1:2012: Information technology — Security techniques — Lightweight cryptography — Part 1: General*.
 30. ISO/IEC (2020). *ISO/IEC 19772:2020: Information security — Authenticated encryption*.
@@ -304,7 +304,7 @@ human cord プロジェクトは、設計の文書化から標準化に至るま
 35. Mukhopadhyay, D., Chakraborty, R. S. (2014). *Hardware Security: Design, Threats, and Safeguards*. CRC Press.
 36. IETF (2017). *RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)*.
 
-> 注: 各エントリは公知の規格・論文に基づくが、版数・発行年は配布前に最終照合する。Phase 3 完了時に現行 36 件から 40 件規模へ追補予定。
+> 注: 全 36 件の版数・発行年は一次ソースと照合済み(2026-07-05)。現行 36 件から 40 件規模への追補は v0.3 で行う。
 
 ---
 
@@ -341,3 +341,4 @@ human cord プロジェクトは、設計の文書化から標準化に至るま
 - 2026-07-02 柱7 物理層の実機測定を反映(§2.6・§4.4・§6.1)。合成劣化モデルに加え、実カメラ(画面撮影 単フレーム ~48%・バースト融合で全担体復元)および実コンビニ印刷 → スマホ撮影(4 密度ティアすべてで単フレーム復号)の実測へ更新。§6.1 テスト件数を 119 → 218 に更新。§5.2 の「全体が MTD 実装/標準提案候補」を「柱10 サブ機能が MTD と発想を共有」へ縮小(全体貢献は §5.3 統合フレームに一本化)。日英同時。PDF 再生成は別途。
 - 2026-07-02(同日)公開準備レビューの残 MED/LOW を反映。§4.4(柱 7)を §5.4「物理層への展望」へ移設し、新規性 3 柱の対応(§1・§4・§5.3)を整合(M-3)。図 1 直下に発行者媒介フロー限定の注記を追加(M-4)。§5.3 を §3.5 の四層(4a/4b/4c/4d)と整合させ、統合フレームの論証(二層検証は列挙からは出ない統合固有の性質)を追記(M-5・M-9)。§3.4 の「完結」に鍵配布の限定を追加(M-10)。用語統一: 柱 8 = 能動的発火応答・領域名 = 発火応答層・§3.1 ミクロ層役割を 4 項目化・§1 柱 6 に層 (IV) 隔離の枠づけ(L-4〜L-7)。文献注を現行 36 件に実数化(L-8)、履歴 2026-05-29 に英語版作成を追記(L-9)。日英同時。図 SVG 再レンダリングと PDF 再生成は別途。
 - 2026-07-02(同日追記)§1 冒頭に要旨一文を追加(README 冒頭と同一文)。構成 = 譲歩先行(公開事実の検証は既存署名で足りる)+ 公開検証層の自層内包 + 主張は「封印本体+閾値発行を一度の発行で同じ一枚に」の二点 + 物理担体は実測エビデンスとして提示 + 依存ゼロ。日英同時。
+- 2026-07-05 参考文献 36 件を一次ソースと最終照合(A-4)。#8 著者表記を公式(Perrin ed., Rev.1 2016-11-20)へ・#17 に pp. 153–162 を補完・#20 を SP 800-108 Rev. 1 Update 1(2024)へ・#27 に RFC 9162 による obsolete 注記(運用中の CT は 6962 ベースのまま)。文末注を「照合済み・追補は v0.3」へ更新。日英同時。

@@ -13,10 +13,10 @@
 |---|---|
 | **Version** | v0.2 (preliminary draft) |
 | **Date** | 2026-05-29 |
-| **Author** | ⟨full legal name — to be inserted just before Phase 3 publication⟩ |
+| **Author** | JUNJI MIZUMA |
 | **Affiliation** | Independent project (unaffiliated; belongs to no company or organization) |
 | **Status** | Phase 0 (design documentation) complete / Phase 1 (minimal POC) all 10 pillars reached / Phase 2 (physical layer) Pillar 7 protocol layer started |
-| **Contact** | ⟨email address — to be inserted just before Phase 3 publication⟩ |
+| **Contact** | midorien.hita@gmail.com |
 | **License** | Text: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)<br>Associated code: Apache License, Version 2.0 |
 
 ---
@@ -274,7 +274,7 @@ Standardization proceeds in stages along the layers of §3.5: first propose laye
 5. Dodis, Y., Reyzin, L., Smith, A. (2004). "Fuzzy Extractors: How to Generate Strong Keys from Biometrics and Other Noisy Data." In *EUROCRYPT 2004*, LNCS 3027, pp. 523–540.
 6. Bertoni, G., Daemen, J., Peeters, M., Van Assche, G. (2007). "Sponge Functions." *ECRYPT Hash Workshop 2007*.
 7. Bernstein, D. J. (2008). "ChaCha, a Variant of Salsa20." *Workshop Record of SASC 2008*.
-8. Marlinspike, M., Perrin, T. (2016). "The Double Ratchet Algorithm." Signal Technical Specification.
+8. Perrin, T. (ed.), Marlinspike, M. (2016). "The Double Ratchet Algorithm." Signal Technical Specification, Revision 1, 20 Nov 2016.
 9. Kerckhoffs, A. (1883). "La cryptographie militaire." *Journal des sciences militaires*, IX, 5–38.
 10. Camenisch, J., Lysyanskaya, A. (2002). "Dynamic Accumulators and Application to Efficient Revocation of Anonymous Credentials." In *CRYPTO 2002*, LNCS 2442, pp. 61–76.
 11. Sporny, M., et al. (2025). "Verifiable Credentials Data Model v2.0." W3C Recommendation, 15 May 2025.
@@ -283,17 +283,17 @@ Standardization proceeds in stages along the layers of §3.5: first propose laye
 14. Kocher, P., Jaffe, J., Jun, B. (1999). "Differential Power Analysis." In *CRYPTO '99*, LNCS 1666, pp. 388–397.
 15. Boneh, D., DeMillo, R. A., Lipton, R. J. (2001). "On the Importance of Eliminating Errors in Cryptographic Computations." *Journal of Cryptology*, 14(2), 101–119.
 16. Genkin, D., Shamir, A., Tromer, E. (2014). "RSA Key Extraction via Low-Bandwidth Acoustic Cryptanalysis." In *CRYPTO 2014*, LNCS 8616, pp. 444–461.
-17. Pfitzmann, B., Waidner, M. (1992). "Attacks on Protocols for Server-Aided RSA Computation." In *EUROCRYPT '92*, LNCS 658.
+17. Pfitzmann, B., Waidner, M. (1992). "Attacks on Protocols for Server-Aided RSA Computation." In *EUROCRYPT '92*, LNCS 658, pp. 153–162.
 18. NIST (2007). *SP 800-38D: Recommendation for Block Cipher Modes of Operation: Galois/Counter Mode (GCM) and GMAC*.
 19. NIST (2016). *SP 800-38G: Recommendation for Block Cipher Modes of Operation: Methods for Format-Preserving Encryption*.
-20. NIST (2008/2022). *SP 800-108 Rev.1: Recommendation for Key Derivation Using Pseudorandom Functions*.
+20. NIST (2022; upd. 1, 2024). *SP 800-108 Rev. 1 (Update 1): Recommendation for Key Derivation Using Pseudorandom Functions*.
 21. NIST (2019; Rev. 1, 2021). *SP 800-160 Vol. 2: Developing Cyber-Resilient Systems — A Systems Security Engineering Approach*.
 22. NIST (2019). *FIPS 140-3: Security Requirements for Cryptographic Modules*.
 23. IETF (2010). *RFC 5869: HMAC-based Extract-and-Expand Key Derivation Function (HKDF)*.
 24. IETF (2008). *RFC 5280: Internet X.509 Public Key Infrastructure Certificate and CRL Profile*.
 25. IETF (2018). *RFC 8446: The Transport Layer Security (TLS) Protocol Version 1.3*.
 26. IETF (2018). *RFC 8439: ChaCha20 and Poly1305 for IETF Protocols*.
-27. IETF (2013). *RFC 6962: Certificate Transparency*.
+27. IETF (2013). *RFC 6962: Certificate Transparency*. (Obsoleted by RFC 9162 (2021); deployed CT remains RFC 6962-based.)
 28. ISO/IEC (2021). *ISO/IEC 18033-1:2021: Information security — Encryption algorithms — Part 1: General*.
 29. ISO/IEC (2012). *ISO/IEC 29192-1:2012: Information technology — Security techniques — Lightweight cryptography — Part 1: General*.
 30. ISO/IEC (2020). *ISO/IEC 19772:2020: Information security — Authenticated encryption*.
@@ -304,7 +304,7 @@ Standardization proceeds in stages along the layers of §3.5: first propose laye
 35. Mukhopadhyay, D., Chakraborty, R. S. (2014). *Hardware Security: Design, Threats, and Safeguards*. CRC Press.
 36. IETF (2017). *RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)*.
 
-> Note: each entry is based on a publicly known standard or paper, but edition numbers and years of publication will be finally cross-checked before distribution. Augmentation from the current 36 to roughly 40 entries is planned upon completion of Phase 3.
+> Note: edition numbers and years of publication for all 36 entries have been cross-checked against primary sources (2026-07-05). Augmentation from the current 36 to roughly 40 entries will be done in v0.3.
 
 ---
 
@@ -341,3 +341,4 @@ Standardization proceeds in stages along the layers of §3.5: first propose laye
 - 2026-07-02 Reflected real-device measurement of the Pillar 7 physical layer (§2.6 · §4.4 · §6.1). Updated from synthetic-degradation-only to measured recovery through a real camera (on-screen capture: single-frame ~48%, all carriers recovered under burst fusion) and real convenience-store printing → smartphone photo (single-frame decode across all four density tiers). Updated the §6.1 test count 119 → 218. Narrowed §5.2 from "the whole is an MTD implementation / candidate standard proposal" to "Pillar 10's sub-function shares its spirit with MTD" (the whole-document contribution is unified into the §5.3 integrative framework). Applied in JA and EN together. PDF regeneration separate.
 - 2026-07-02 (same day) Reflected the remaining MED/LOW items of the publication-readiness review. Moved §4.4 (Pillar 7) to §5.4 "Outlook on the Physical Layer," aligning the three-novelty correspondence across §1, §4, and §5.3 (M-3). Added a note under Figure 1 limiting it to the issuer-mediated flow (M-4). Aligned §5.3 with the four layers of §3.5 (4a/4b/4c/4d) and added the argument for the integrative framework (the two-layer verification is a property intrinsic to integration, not derivable from enumeration) (M-5, M-9). Added the key-distribution qualification to "completes" in §3.4 (M-10). Terminology unified: Pillar 8 = active tamper response, domain name = active-response layer, §3.1 micro-layer roles reduced to four items, §1 Pillar 6 framed with its layer-(IV) quarantine (L-4–L-7). Reference note updated to the actual 36 entries (L-8); noted the English edition in the 2026-05-29 history line (L-9). JA and EN together. Figure SVG re-rendering and PDF regeneration separate.
 - 2026-07-02 (same day, addendum) Added a one-sentence thesis at the head of §1 (identical to the README lead). Structure = concession first (existing signatures suffice for public facts) + folding the public-verification layer in as human cord's own + the claim narrowed to two points (sealed body + threshold issuance, bundled onto the same sheet in a single issuance) + the physical carrier presented as measured evidence + zero dependencies. JA and EN together.
+- 2026-07-05 Final cross-check of all 36 references against primary sources (A-4). #8 author listing corrected to the official form (Perrin ed., Rev. 1, 20 Nov 2016); #17 completed with pp. 153–162; #20 updated to SP 800-108 Rev. 1 Update 1 (2024); #27 annotated as obsoleted by RFC 9162 (deployed CT remains 6962-based). Reference endnote updated to "cross-checked; augmentation in v0.3." JA and EN together.

@@ -1,7 +1,7 @@
 {
   "name": "human-cord",
-  "version": "0.1.0",
-  "description": "human cord — 嘘では逃げられない情報インフラ (Phase 1 POC)",
+  "version": "0.2.0",
+  "description": "human cord — 嘘では逃げられない情報インフラ (Phase 1 POC + attestation profile v1)",
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
@@ -25,9 +25,55 @@
     "demo:reconstruct": "node examples/reconstruct-demo.js",
     "demo:pubkey": "node examples/pubkey-demo.js",
     "demo:budget": "node examples/budget-demo.js",
-    "test": "node --test"
+    "test": "node --test",
+    "vectors": "node tools/gen-vectors.mjs > test/vectors/attestation-v1.json",
+    "verify:py": "python3 verify/verify_attestation.py --self-test test/vectors/attestation-v1.json"
   },
   "engines": {
     "node": ">=20"
+  },
+  "main": "./src/issue.js",
+  "exports": {
+    ".": "./src/issue.js",
+    "./attest": "./src/jws.js",
+    "./jcs": "./src/jcs.js",
+    "./pubkey": "./src/pubkey.js",
+    "./issue": "./src/issue.js",
+    "./core": "./src/cord.js",
+    "./threshold": "./src/threshold.js",
+    "./transparency": "./src/transparency.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "human-cord": "./bin/human-cord.mjs"
+  },
+  "files": [
+    "src",
+    "bin",
+    "verify",
+    "examples/verify.html",
+    "examples/verify-jws.html",
+    "docs/spec",
+    "test/vectors",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "attestation",
+    "jws",
+    "eddsa",
+    "ed25519",
+    "jcs",
+    "rfc8785",
+    "transparency",
+    "merkle",
+    "rfc6962",
+    "certificate",
+    "zero-dependency"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/midorienhita-commits/human-cord"
   }
 }

@@ -8,6 +8,37 @@
 
 ---
 
+## ▶ 採用する:attestation profile v1(JWS / EdDSA)— human cord のコード無しで検証できる
+
+公開検証層を **標準コンテナ**(JWS RFC 7515 + EdDSA RFC 8037、JWK/JWKS RFC 7517、kid = RFC 7638、正準化 = JCS RFC 8785)に載せた。
+発行は 5 行、検証は既存の JWS ライブラリでも、同梱の **依存ゼロ Python 参照実装**でも、ブラウザ 1 枚でもできる。
+
+```js
+import { generateKeypair, signAttestation, verifyAttestation, makeJwks } from 'human-cord/attest';
+
+const { privateKey, publicKey } = generateKeypair();          // 秘密鍵はサーバにのみ
+const jws = signAttestation({ cert: 'CERT-2026-0001', devices: 12 }, privateKey,
+                            { docId: 'J-001', issuedAt: '2026-05-31T03:52:04Z', iss: 'example' });
+const jwks = makeJwks([publicKey]);                            // /.well-known/human-cord-keys.json に置く
+verifyAttestation(jws, jwks);   // → { ok:true, facts:{…}, docId:'J-001', kid:'…' }
+```
+
+```bash
+npx human-cord keygen --out keys/                 # 鍵対 + 公開 JWK
+npx human-cord sign facts.json --key keys/issuer-private.pem --doc-id J-001 > att.jws
+npx human-cord jwks keys/issuer-public.pem > keys.json
+npx human-cord verify att.jws --keys keys.json    # 終了コード 0/1
+python3 verify/verify_attestation.py att.jws --keys keys.json   # 独立実装(標準ライブラリのみ)で同じ答え
+```
+
+- 仕様: [`docs/spec/attestation-profile-v1.md`](docs/spec/attestation-profile-v1.md)。
+- テストベクタ: [`test/vectors/attestation-v1.json`](test/vectors/attestation-v1.json)(RFC 8032 §7.1 のシード由来のテスト専用鍵・肯定 4 例・否定 4 例)。Node と Python が全件一致。
+- 汎用検証ページ: [`examples/verify-jws.html`](examples/verify-jws.html)(`?jws=…&keys=<JWKS URL>` または `&jwks=<base64url(JWKS)>` で完全オフライン)。採用先ごとの写しは不要。
+- 従来の v0(`signStatement` 形式)は今後も検証できる(`verifyAny`)。正準化規則が JCS と同一であることはテストで証明済み。
+- 保証の所在は層ごとに違う → [`SECURITY.md`](SECURITY.md) の層別表。公開検証層は `node:crypto` / Web Crypto の Ed25519 のみで、自作暗号を含まない。
+
+---
+
 ## ▶ まず触る:公開検証(30 秒・サーバ不要)
 
 [`examples/verify.html`](examples/verify.html) をブラウザで開くだけ。発行者の**公開鍵だけ**で、
@@ -169,7 +200,7 @@ npm run demo:subliminal     # 柱6-i 付帯ペイロード + 柱8 煙(改ざん�
 npm run demo:simmons        # 柱6-ii 真の Simmons 潜在チャネル(署名 nonce 埋込)
 npm run demo:live           # 生きた担体(テロメア型フレーム鎖・リプレイ検知)
 npm run demo:challenge      # 対話チャレンジ応答 liveness
-npm test                    # 振る舞いテスト 218 本(node --test, 依存ゼロ)
+npm test                    # 振る舞いテスト 241 本(node --test, 依存ゼロ。attestation v1・JCS・透明性ログ・独立実装一致を含む)
 # examples/verify.html をブラウザで開く → 公開検証ページ(サーバ不要・公開鍵だけで真贋確認)
 ```
 

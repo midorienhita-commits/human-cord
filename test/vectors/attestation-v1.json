@@ -1,0 +1,299 @@
+{
+  "profile": "human-cord attestation v1",
+  "note": "Test-only keys derived from RFC 8032 §7.1 seeds. Never use in production.",
+  "keys": {
+    "k1": {
+      "seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "private_pem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g\n-----END PRIVATE KEY-----\n",
+      "public_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=\n-----END PUBLIC KEY-----\n",
+      "jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+        "kid": "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k"
+      }
+    },
+    "k2": {
+      "seed_hex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+      "private_pem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIEzNCJso/5banbbDRuwRTg9bijGfNaumJNqM9u1PuKb7\n-----END PRIVATE KEY-----\n",
+      "public_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=\n-----END PUBLIC KEY-----\n",
+      "jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "PUAXw-hDiVqStwqnTRt-vJyYLM8uxJaMwM1V8Sr0Zgw",
+        "kid": "FtIu-VbGrfe_KB6CH7GNwODB72MNxj_ml11dEvO-7kk"
+      }
+    }
+  },
+  "jwks": {
+    "keys": [
+      {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+        "kid": "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k",
+        "use": "sig",
+        "alg": "EdDSA"
+      },
+      {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "PUAXw-hDiVqStwqnTRt-vJyYLM8uxJaMwM1V8Sr0Zgw",
+        "kid": "FtIu-VbGrfe_KB6CH7GNwODB72MNxj_ml11dEvO-7kk",
+        "use": "sig",
+        "alg": "EdDSA"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "basic",
+      "key": "k1",
+      "facts": {
+        "cert": "CERT-2026-0001",
+        "docId": "J-001",
+        "devices": 12,
+        "issuedAt": "2026-05-31T03:52:04.941Z"
+      },
+      "docId": "J-001",
+      "issuedAt": "2026-05-31T03:52:04.941Z",
+      "iss": "example-issuer",
+      "header": {
+        "alg": "EdDSA",
+        "kid": "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k",
+        "typ": "hc-attestation+jwt"
+      },
+      "payload": {
+        "hc": {
+          "facts": {
+            "cert": "CERT-2026-0001",
+            "devices": 12,
+            "docId": "J-001",
+            "issuedAt": "2026-05-31T03:52:04.941Z"
+          },
+          "issuedAt": "2026-05-31T03:52:04.941Z",
+          "v": 1
+        },
+        "iat": 1780199524,
+        "iss": "example-issuer",
+        "sub": "J-001"
+      },
+      "header_jcs": "{\"alg\":\"EdDSA\",\"kid\":\"kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k\",\"typ\":\"hc-attestation+jwt\"}",
+      "payload_jcs": "{\"hc\":{\"facts\":{\"cert\":\"CERT-2026-0001\",\"devices\":12,\"docId\":\"J-001\",\"issuedAt\":\"2026-05-31T03:52:04.941Z\"},\"issuedAt\":\"2026-05-31T03:52:04.941Z\",\"v\":1},\"iat\":1780199524,\"iss\":\"example-issuer\",\"sub\":\"J-001\"}",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImtQcktfcW14VldhWVZBOXd3QkY2SXVvM3ZWeno3VHhIQ1R3WEJ5Z3JTNGsiLCJ0eXAiOiJoYy1hdHRlc3RhdGlvbitqd3QifQ.eyJoYyI6eyJmYWN0cyI6eyJjZXJ0IjoiQ0VSVC0yMDI2LTAwMDEiLCJkZXZpY2VzIjoxMiwiZG9jSWQiOiJKLTAwMSIsImlzc3VlZEF0IjoiMjAyNi0wNS0zMVQwMzo1MjowNC45NDFaIn0sImlzc3VlZEF0IjoiMjAyNi0wNS0zMVQwMzo1MjowNC45NDFaIiwidiI6MX0sImlhdCI6MTc4MDE5OTUyNCwiaXNzIjoiZXhhbXBsZS1pc3N1ZXIiLCJzdWIiOiJKLTAwMSJ9.Idfh_gx2wd6ZQtSkjRQP1LsKvSS__fHLcUpBtZyke4htdzTR7EwLoflnDev16c1sLz04kK11wTYHZyaV_ucEDw",
+      "legacy_v0": {
+        "facts": {
+          "cert": "CERT-2026-0001",
+          "docId": "J-001",
+          "devices": 12,
+          "issuedAt": "2026-05-31T03:52:04.941Z"
+        },
+        "docId": "J-001",
+        "issuedAt": "2026-05-31T03:52:04.941Z",
+        "alg": "ed25519",
+        "sig": "GzhxkVs57VKg/euR1lhB7HSjY1WPAKFom7btd3/pl60D9woVGqQB99pvivj1uk0cEcuxNVUGK3AJ4fQZVn4fBg=="
+      },
+      "legacy_v0_canonical": "{\"docId\":\"J-001\",\"facts\":{\"cert\":\"CERT-2026-0001\",\"devices\":12,\"docId\":\"J-001\",\"issuedAt\":\"2026-05-31T03:52:04.941Z\"},\"issuedAt\":\"2026-05-31T03:52:04.941Z\"}"
+    },
+    {
+      "name": "nested-and-unicode",
+      "key": "k1",
+      "facts": {
+        "名称": "データ消去証明書",
+        "list": [
+          1,
+          2.5,
+          "x",
+          null,
+          true
+        ],
+        "nested": {
+          "z": {
+            "y": "w"
+          },
+          "a": []
+        },
+        "€": "\u0000\n\"\\/"
+      },
+      "docId": "INTK-20260531-001",
+      "issuedAt": "2026-05-31T03:52:04Z",
+      "iss": null,
+      "header": {
+        "alg": "EdDSA",
+        "kid": "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k",
+        "typ": "hc-attestation+jwt"
+      },
+      "payload": {
+        "hc": {
+          "facts": {
+            "list": [
+              1,
+              2.5,
+              "x",
+              null,
+              true
+            ],
+            "nested": {
+              "a": [],
+              "z": {
+                "y": "w"
+              }
+            },
+            "€": "\u0000\n\"\\/",
+            "名称": "データ消去証明書"
+          },
+          "issuedAt": "2026-05-31T03:52:04Z",
+          "v": 1
+        },
+        "iat": 1780199524,
+        "sub": "INTK-20260531-001"
+      },
+      "header_jcs": "{\"alg\":\"EdDSA\",\"kid\":\"kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k\",\"typ\":\"hc-attestation+jwt\"}",
+      "payload_jcs": "{\"hc\":{\"facts\":{\"list\":[1,2.5,\"x\",null,true],\"nested\":{\"a\":[],\"z\":{\"y\":\"w\"}},\"€\":\"\\u0000\\n\\\"\\\\/\",\"名称\":\"データ消去証明書\"},\"issuedAt\":\"2026-05-31T03:52:04Z\",\"v\":1},\"iat\":1780199524,\"sub\":\"INTK-20260531-001\"}",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImtQcktfcW14VldhWVZBOXd3QkY2SXVvM3ZWeno3VHhIQ1R3WEJ5Z3JTNGsiLCJ0eXAiOiJoYy1hdHRlc3RhdGlvbitqd3QifQ.eyJoYyI6eyJmYWN0cyI6eyJsaXN0IjpbMSwyLjUsIngiLG51bGwsdHJ1ZV0sIm5lc3RlZCI6eyJhIjpbXSwieiI6eyJ5IjoidyJ9fSwi4oKsIjoiXHUwMDAwXG5cIlxcLyIsIuWQjeensCI6IuODh-ODvOOCv-a2iOWOu-iovOaYjuabuCJ9LCJpc3N1ZWRBdCI6IjIwMjYtMDUtMzFUMDM6NTI6MDRaIiwidiI6MX0sImlhdCI6MTc4MDE5OTUyNCwic3ViIjoiSU5USy0yMDI2MDUzMS0wMDEifQ.Bfqg5dX6_pXhLuyGGqnPwvvFGmkovu1UtYP1occVVs1Iy49fUSVhalnSb48hqnzvRTq5vtpzW1GgSfqIyt_eDA",
+      "legacy_v0": {
+        "facts": {
+          "名称": "データ消去証明書",
+          "list": [
+            1,
+            2.5,
+            "x",
+            null,
+            true
+          ],
+          "nested": {
+            "z": {
+              "y": "w"
+            },
+            "a": []
+          },
+          "€": "\u0000\n\"\\/"
+        },
+        "docId": "INTK-20260531-001",
+        "issuedAt": "2026-05-31T03:52:04Z",
+        "alg": "ed25519",
+        "sig": "zU+yrmJck/DDBdvwXZPqlMx+TwEwse3iY5FRxV6UNNla7fKluG4TUbWng91nRHzK9kU+igVr+onrSKKhR0PwAA=="
+      },
+      "legacy_v0_canonical": "{\"docId\":\"INTK-20260531-001\",\"facts\":{\"list\":[1,2.5,\"x\",null,true],\"nested\":{\"a\":[],\"z\":{\"y\":\"w\"}},\"€\":\"\\u0000\\n\\\"\\\\/\",\"名称\":\"データ消去証明書\"},\"issuedAt\":\"2026-05-31T03:52:04Z\"}"
+    },
+    {
+      "name": "string-facts-no-optional-claims",
+      "key": "k2",
+      "facts": "plain string facts",
+      "docId": null,
+      "issuedAt": null,
+      "iss": null,
+      "header": {
+        "alg": "EdDSA",
+        "kid": "FtIu-VbGrfe_KB6CH7GNwODB72MNxj_ml11dEvO-7kk",
+        "typ": "hc-attestation+jwt"
+      },
+      "payload": {
+        "hc": {
+          "facts": "plain string facts",
+          "v": 1
+        }
+      },
+      "header_jcs": "{\"alg\":\"EdDSA\",\"kid\":\"FtIu-VbGrfe_KB6CH7GNwODB72MNxj_ml11dEvO-7kk\",\"typ\":\"hc-attestation+jwt\"}",
+      "payload_jcs": "{\"hc\":{\"facts\":\"plain string facts\",\"v\":1}}",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkZ0SXUtVmJHcmZlX0tCNkNIN0dOd09EQjcyTU54al9tbDExZEV2Ty03a2siLCJ0eXAiOiJoYy1hdHRlc3RhdGlvbitqd3QifQ.eyJoYyI6eyJmYWN0cyI6InBsYWluIHN0cmluZyBmYWN0cyIsInYiOjF9fQ.EW8biRm_SgZdyYoqs4snYUA14MfDgb1bXgZhoDPKl_2vtB3wS00nnc6xdT5asZah1ad7a1CI83GHDQOEsRFqCQ",
+      "legacy_v0": {
+        "facts": "plain string facts",
+        "docId": null,
+        "issuedAt": null,
+        "alg": "ed25519",
+        "sig": "+6hQgcrfsKfpwTELHrwSHVMa0xo3EZH9DNhraE0J47pVTpJiMTDhf/XqExVBvTP8rjNRyrNZyfsiEbv56otRAg=="
+      },
+      "legacy_v0_canonical": "{\"docId\":null,\"facts\":\"plain string facts\",\"issuedAt\":null}"
+    },
+    {
+      "name": "numbers-jcs",
+      "key": "k2",
+      "facts": {
+        "numbers": [
+          333333333.3333333,
+          1e+30,
+          4.5,
+          0.002,
+          1e-27,
+          0,
+          0,
+          1e+21
+        ]
+      },
+      "docId": 42,
+      "issuedAt": "2026-01-01T00:00:00.000Z",
+      "iss": "n",
+      "header": {
+        "alg": "EdDSA",
+        "kid": "FtIu-VbGrfe_KB6CH7GNwODB72MNxj_ml11dEvO-7kk",
+        "typ": "hc-attestation+jwt"
+      },
+      "payload": {
+        "hc": {
+          "facts": {
+            "numbers": [
+              333333333.3333333,
+              1e+30,
+              4.5,
+              0.002,
+              1e-27,
+              0,
+              0,
+              1e+21
+            ]
+          },
+          "issuedAt": "2026-01-01T00:00:00.000Z",
+          "v": 1
+        },
+        "iat": 1767225600,
+        "iss": "n",
+        "sub": "42"
+      },
+      "header_jcs": "{\"alg\":\"EdDSA\",\"kid\":\"FtIu-VbGrfe_KB6CH7GNwODB72MNxj_ml11dEvO-7kk\",\"typ\":\"hc-attestation+jwt\"}",
+      "payload_jcs": "{\"hc\":{\"facts\":{\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27,0,0,1e+21]},\"issuedAt\":\"2026-01-01T00:00:00.000Z\",\"v\":1},\"iat\":1767225600,\"iss\":\"n\",\"sub\":\"42\"}",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6IkZ0SXUtVmJHcmZlX0tCNkNIN0dOd09EQjcyTU54al9tbDExZEV2Ty03a2siLCJ0eXAiOiJoYy1hdHRlc3RhdGlvbitqd3QifQ.eyJoYyI6eyJmYWN0cyI6eyJudW1iZXJzIjpbMzMzMzMzMzMzLjMzMzMzMzMsMWUrMzAsNC41LDAuMDAyLDFlLTI3LDAsMCwxZSsyMV19LCJpc3N1ZWRBdCI6IjIwMjYtMDEtMDFUMDA6MDA6MDAuMDAwWiIsInYiOjF9LCJpYXQiOjE3NjcyMjU2MDAsImlzcyI6Im4iLCJzdWIiOiI0MiJ9.pueaU6NKQtH1IBgnbsg04z8VHHf_SY39cEyfgGgKft_hGgi-hzg1x3QLJSYTV7594Fm9xUarXpmlzFJ_OMBODQ",
+      "legacy_v0": {
+        "facts": {
+          "numbers": [
+            333333333.3333333,
+            1e+30,
+            4.5,
+            0.002,
+            1e-27,
+            0,
+            0,
+            1e+21
+          ]
+        },
+        "docId": 42,
+        "issuedAt": "2026-01-01T00:00:00.000Z",
+        "alg": "ed25519",
+        "sig": "GZ/2xuD1S/6rTTubuxZgjOh17pAawgKR+521MMwSFRiu/mivuZMNBYorrp8T2/r5KLZNkl5I8UlvM50KVAV9AA=="
+      },
+      "legacy_v0_canonical": "{\"docId\":42,\"facts\":{\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27,0,0,1e+21]},\"issuedAt\":\"2026-01-01T00:00:00.000Z\"}"
+    }
+  ],
+  "negative": [
+    {
+      "name": "tampered-payload",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImtQcktfcW14VldhWVZBOXd3QkY2SXVvM3ZWeno3VHhIQ1R3WEJ5Z3JTNGsiLCJ0eXAiOiJoYy1hdHRlc3RhdGlvbitqd3QifQ.eyJoYyI6eyJmYWN0cyI6eyJjZXJ0IjoiQ0VSVC0yMDI2LTAwMDEiLCJkZXZpY2VzIjo5OTk5LCJkb2NJZCI6IkotMDAxIiwiaXNzdWVkQXQiOiIyMDI2LTA1LTMxVDAzOjUyOjA0Ljk0MVoifSwiaXNzdWVkQXQiOiIyMDI2LTA1LTMxVDAzOjUyOjA0Ljk0MVoiLCJ2IjoxfSwiaWF0IjoxNzgwMTk5NTI0LCJpc3MiOiJleGFtcGxlLWlzc3VlciIsInN1YiI6IkotMDAxIn0.Idfh_gx2wd6ZQtSkjRQP1LsKvSS__fHLcUpBtZyke4htdzTR7EwLoflnDev16c1sLz04kK11wTYHZyaV_ucEDw",
+      "key": "k1"
+    },
+    {
+      "name": "wrong-key",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImtQcktfcW14VldhWVZBOXd3QkY2SXVvM3ZWeno3VHhIQ1R3WEJ5Z3JTNGsiLCJ0eXAiOiJoYy1hdHRlc3RhdGlvbitqd3QifQ.eyJoYyI6eyJmYWN0cyI6eyJjZXJ0IjoiQ0VSVC0yMDI2LTAwMDEiLCJkZXZpY2VzIjoxMiwiZG9jSWQiOiJKLTAwMSIsImlzc3VlZEF0IjoiMjAyNi0wNS0zMVQwMzo1MjowNC45NDFaIn0sImlzc3VlZEF0IjoiMjAyNi0wNS0zMVQwMzo1MjowNC45NDFaIiwidiI6MX0sImlhdCI6MTc4MDE5OTUyNCwiaXNzIjoiZXhhbXBsZS1pc3N1ZXIiLCJzdWIiOiJKLTAwMSJ9.Idfh_gx2wd6ZQtSkjRQP1LsKvSS__fHLcUpBtZyke4htdzTR7EwLoflnDev16c1sLz04kK11wTYHZyaV_ucEDw",
+      "key": "k2"
+    },
+    {
+      "name": "alg-none",
+      "jws": "eyJhbGciOiJub25lIn0.eyJoYyI6eyJmYWN0cyI6eyJjZXJ0IjoiQ0VSVC0yMDI2LTAwMDEiLCJkZXZpY2VzIjoxMiwiZG9jSWQiOiJKLTAwMSIsImlzc3VlZEF0IjoiMjAyNi0wNS0zMVQwMzo1MjowNC45NDFaIn0sImlzc3VlZEF0IjoiMjAyNi0wNS0zMVQwMzo1MjowNC45NDFaIiwidiI6MX0sImlhdCI6MTc4MDE5OTUyNCwiaXNzIjoiZXhhbXBsZS1pc3N1ZXIiLCJzdWIiOiJKLTAwMSJ9.",
+      "key": "k1"
+    },
+    {
+      "name": "truncated-signature",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImtQcktfcW14VldhWVZBOXd3QkY2SXVvM3ZWeno3VHhIQ1R3WEJ5Z3JTNGsiLCJ0eXAiOiJoYy1hdHRlc3RhdGlvbitqd3QifQ.eyJoYyI6eyJmYWN0cyI6eyJjZXJ0IjoiQ0VSVC0yMDI2LTAwMDEiLCJkZXZpY2VzIjoxMiwiZG9jSWQiOiJKLTAwMSIsImlzc3VlZEF0IjoiMjAyNi0wNS0zMVQwMzo1MjowNC45NDFaIn0sImlzc3VlZEF0IjoiMjAyNi0wNS0zMVQwMzo1MjowNC45NDFaIiwidiI6MX0sImlhdCI6MTc4MDE5OTUyNCwiaXNzIjoiZXhhbXBsZS1pc3N1ZXIiLCJzdWIiOiJKLTAwMSJ9.Idfh_gx2wd6ZQtSkjRQP1LsKvSS__fHLcUpBtZyke4htdzTR7EwLoflnDev16c1sLz04kK11wTYHZyaV_u",
+      "key": "k1"
+    }
+  ]
+}

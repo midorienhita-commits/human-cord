@@ -42,7 +42,8 @@
     "./core": "./src/cord.js",
     "./threshold": "./src/threshold.js",
     "./transparency": "./src/transparency.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./tone": "./src/tone.js"
   },
   "bin": {
     "human-cord": "./bin/human-cord.mjs"

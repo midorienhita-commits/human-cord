@@ -74,7 +74,7 @@ python3 verify/verify_attestation.py att.jws --keys keys.json   # 独立実装(�
 | 2 | **公開検証層(Ed25519)** | 公開可能な事実は誰でも・公開鍵だけで・オフライン検証(上のキラーデモ) | `src/pubkey.js` |
 | 3 | **秘匿突き合わせ(割符 `+/-`)** | 本体を開示せず同一案件の統合 / 差分を判定 | `src/tally.js` `issue.js` |
 | 4 | **閾値発行** | 単一拠点では発行できない。真の閾値署名(秘密を一度も再構成しないしきい値 Schnorr・素数体・依存ゼロ)まで実装到達 | `src/threshold.js` `shard.js` |
-| 5 | **印刷可能担体 + 誤り訂正** | Reed-Solomon over GF(256)。紙・画面・音に載せて実測で復元(上の実測) | `src/ecc.js` `image.js` `photo.js` `audio.js` |
+| 5 | **印刷可能担体 + 誤り訂正** | Reed-Solomon over GF(256)。紙・画面・音に載せて実測で復元(上の実測)。音響は実環境向けに DTMF 互換担体(`tone.js`、通話帯域・Goertzel、SNR 6 dB で復号)も持つ | `src/ecc.js` `image.js` `photo.js` `audio.js` `tone.js` |
 
 この 5 つを**一度の発行で同じ一枚に束ねる**のが採用面 `src/issue.js` の `issue()`。
 

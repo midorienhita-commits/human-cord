@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>human cord — 汎用公開検証(attestation v1 / JWS)</title>
+<!--
+  採用先に依存しない 1 枚の検証ページ。発行者の鍵は「JWKS」として渡す:
+    ?jws=<compact JWS>&keys=<URL of JWKS>        … 採用先の /.well-known/human-cord-keys.json を取得
+    ?jws=<compact JWS>&jwks=<base64url(JWKS JSON)> … 完全オフライン(鍵を同梱)
+  どちらも無ければ下のフォームに貼り付ける。検証は Web Crypto(Ed25519)のみ、サーバ通信は keys= の取得だけ。
+  v0(pubkey.js 形式の JSON)も、公開鍵 PEM を貼れば検証できる(後方互換)。
+-->
+<style>
+  :root{ --ink:#15202b; --muted:#5b6b7a; --line:#dde3ea; --ok:#1b8a4b; --okbg:#e9f7ef; --ng:#c62828; --ngbg:#fdecec; --accent:#2c3e50; }
+  *{ box-sizing:border-box; } body{ font-family:"Yu Gothic","Meiryo",system-ui,sans-serif; max-width:780px; margin:0 auto; padding:28px 18px 60px; color:var(--ink); line-height:1.65; background:#fbfcfd; }
+  h1{ font-size:22px; margin:0 0 4px; } .tagline{ color:var(--muted); font-size:14px; margin:0 0 14px; }
+  .card{ background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+  table{ border-collapse:collapse; width:100%; font-size:14px; } th,td{ border:1px solid var(--line); padding:7px 12px; text-align:left; vertical-align:top; } th{ background:#f6f8fa; color:var(--muted); width:34%; white-space:nowrap; }
+  #result{ margin-top:16px; padding:16px; border-radius:10px; display:none; } #result.ok{ background:var(--okbg); border:1px solid var(--ok); } #result.ng{ background:var(--ngbg); border:1px solid var(--ng); }
+  .verdict{ font-weight:bold; font-size:18px; } #result.ok .verdict{ color:var(--ok);} #result.ng .verdict{ color:var(--ng);} .sub{ font-size:13px; color:var(--muted); margin-top:4px; }
+  label{ display:block; font-weight:bold; margin:12px 0 4px; font-size:13px; } textarea{ width:100%; font-family:ui-monospace,Consolas,monospace; font-size:12px; padding:8px; border:1px solid #aaa; border-radius:6px; min-height:80px; }
+  button{ font-size:14px; font-weight:bold; padding:10px 16px; border-radius:8px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; margin-top:12px; }
+  code{ background:#eef2f6; padding:1px 5px; border-radius:4px; font-size:12px; } .note{ color:var(--muted); font-size:12px; margin-top:22px; border-top:1px solid var(--line); padding-top:12px; }
+</style>
+</head>
+<body>
+<h1>公開検証(attestation v1)</h1>
+<p class="tagline">発行者の<b>公開鍵(JWKS)だけ</b>で、この証明が<b>本物か・改ざんされていないか</b>を確かめます。</p>
+<div class="card">
+  <h2 style="font-size:14px;color:var(--muted);margin:0 0 12px">// 証明の内容</h2>
+  <table id="facts"></table>
+  <div id="result"></div>
+</div>
+<div class="card">
+  <label for="jws">証明(compact JWS、または v0 JSON)</label>
+  <textarea id="jws"></textarea>
+  <label for="keys">発行者の鍵(JWKS JSON、または公開鍵 PEM)</label>
+  <textarea id="keys"></textarea>
+  <button id="go">✓ 検証する</button>
+</div>
+<p class="note"><b>仕組み:</b> JWS(RFC 7515)の <code>alg=EdDSA</code>(RFC 8037)。ヘッダの <code>kid</code>(RFC 7638 サムプリント)で JWKS から鍵を選び、
+<code>BASE64URL(header).BASE64URL(payload)</code> の Ed25519 署名を Web Crypto で検証します。payload の <code>hc.facts</code> が署名された事実です。
+このページは採用先ごとの写しを必要としません。鍵は採用先が公開する JWKS(例: <code>/.well-known/human-cord-keys.json</code>)から取ります。</p>
+<script>
+const b64u = s => Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/') + '='.repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0));
+const utf8 = b => new TextDecoder().decode(b);
+const b64uEnc = b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+function jcs(v){ if(v===null||typeof v!=='object') return JSON.stringify(v); if(Array.isArray(v)) return '['+v.map(x=>jcs(x===undefined?null:x)).join(',')+']';
+  return '{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+jcs(v[k])).join(',')+'}'; }
+async function thumbprint(jwk){ const d=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(jcs({crv:jwk.crv,kty:jwk.kty,x:jwk.x}))); return b64uEnc(d); }
+function pemToJwk(pem){ const der=b64u(pem.replace(/-----[^-]+-----/g,'').replace(/\s+/g,'').replace(/\+/g,'-').replace(/\//g,'_')); if(der.length!==44) throw new Error('Ed25519 SPKI ではありません'); return {kty:'OKP',crv:'Ed25519',x:b64uEnc(der.slice(12))}; }
+async function loadKeys(text){ text=text.trim(); let list=[]; if(text.includes('BEGIN PUBLIC KEY')) list=[pemToJwk(text)]; else { const j=JSON.parse(text); list=j.keys||(Array.isArray(j)?j:[j]); }
+  for(const k of list){ if(!k.kid) k.kid=await thumbprint(k); } return list; }
+async function verifyJws(jws, keys){
+  const parts=jws.trim().split('.'); if(parts.length!==3) return {ok:false,reason:'JWS の形式が不正です'};
+  let header,payload; try{ header=JSON.parse(utf8(b64u(parts[0]))); payload=JSON.parse(utf8(b64u(parts[1]))); }catch(e){ return {ok:false,reason:'JWS を読めません'}; }
+  if(header.alg!=='EdDSA') return {ok:false,reason:'対応していない alg: '+header.alg};
+  if(!payload.hc||payload.hc.v!==1) return {ok:false,reason:'human cord attestation v1 ではありません'};
+  let jwk = header.kid ? keys.find(k=>k.kid===header.kid) : (keys.length===1?keys[0]:null);
+  if(!jwk) return {ok:false,reason:header.kid?'kid '+header.kid+' に対応する鍵が JWKS にありません':'鍵を特定できません'};
+  if(jwk['hc:status']==='revoked') return {ok:false,reason:'この鍵は失効(revoked)しています'};
+  const key=await crypto.subtle.importKey('jwk',{kty:'OKP',crv:'Ed25519',x:jwk.x},{name:'Ed25519'},false,['verify']);
+  const ok=await crypto.subtle.verify({name:'Ed25519'},key,b64u(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1]));
+  return ok?{ok:true,facts:payload.hc.facts,docId:payload.sub??null,issuedAt:payload.hc.issuedAt??null,iss:payload.iss??null,kid:jwk.kid,keyStatus:jwk['hc:status']||null}:{ok:false,reason:'署名が一致しません(改ざん or 別発行者)'};
+}
+async function verifyV0(att, keys){ // pubkey.js 形式(後方互換)
+  const c=new TextEncoder().encode(jcs({facts:att.facts,docId:att.docId??null,issuedAt:att.issuedAt??null}));
+  for(const jwk of keys){ const key=await crypto.subtle.importKey('jwk',{kty:'OKP',crv:'Ed25519',x:jwk.x},{name:'Ed25519'},false,['verify']);
+    if(await crypto.subtle.verify({name:'Ed25519'},key,b64u(att.sig.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')),c)) return {ok:true,facts:att.facts,docId:att.docId,issuedAt:att.issuedAt??null,kid:jwk.kid,version:0}; }
+  return {ok:false,reason:'署名が一致しません(改ざん or 別発行者)'};
+}
+const el=(t,x,c)=>{const n=document.createElement(t); if(x!=null) n.textContent=x; if(c) n.className=c; return n;};
+function render(r){ const t=document.getElementById('facts'); t.textContent=''; const box=document.getElementById('result'); box.textContent=''; box.style.display='block'; box.className=r.ok?'ok':'ng'; box.dataset.verdict=r.ok?'valid':'invalid';
+  if(r.ok){ const f=r.facts; const rows=(f&&typeof f==='object')?Object.entries(f):[['facts',f]]; for(const [k,v] of rows){ const tr=el('tr'); tr.appendChild(el('th',k)); tr.appendChild(el('td',typeof v==='object'?JSON.stringify(v):String(v))); t.appendChild(tr); }
+    box.appendChild(el('div','✓ 正規発行・改ざんなし','verdict')); box.appendChild(el('div',`発行者鍵 ${r.kid}${r.keyStatus?' ('+r.keyStatus+')':''}${r.docId?' / 案件 '+r.docId:''}${r.issuedAt?' / 発行 '+r.issuedAt:''}`,'sub')); }
+  else { box.appendChild(el('div','✗ 検証できません','verdict')); box.appendChild(el('div',r.reason||'','sub')); } }
+async function run(){ try{ const keys=await loadKeys(document.getElementById('keys').value); const raw=document.getElementById('jws').value.trim();
+  render(raw.startsWith('{')?await verifyV0(JSON.parse(raw),keys):await verifyJws(raw,keys)); }catch(e){ render({ok:false,reason:e.message}); } }
+document.getElementById('go').addEventListener('click',run);
+(async()=>{ const p=new URLSearchParams(location.search); const jws=p.get('jws'); if(jws) document.getElementById('jws').value=jws;
+  if(p.get('jwks')) document.getElementById('keys').value=utf8(b64u(p.get('jwks')));
+  else if(p.get('keys')){ try{ document.getElementById('keys').value=await (await fetch(p.get('keys'))).text(); }catch(e){ render({ok:false,reason:'JWKS を取得できません: '+e.message}); return; } }
+  if(jws && document.getElementById('keys').value) run(); })();
+</script>
+</body>
+</html>
